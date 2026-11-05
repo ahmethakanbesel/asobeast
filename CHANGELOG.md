@@ -3,6 +3,40 @@
 All notable changes to asobeast are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.16.0](https://github.com/AsoBeast/asobeast/compare/v1.15.0...v1.16.0) (2026-11-05)
+
+
+### Features
+
+* **alerts:** alert on a rating drop and a review spike ([#700](https://github.com/AsoBeast/asobeast/issues/700)) ([7c4df58](https://github.com/AsoBeast/asobeast/commit/7c4df58bda2906b858778fd8500cf5c4da2950ce))
+* **alerts:** alert when an app is delisted or unlisted in a market ([#701](https://github.com/AsoBeast/asobeast/issues/701)) ([d5197e0](https://github.com/AsoBeast/asobeast/commit/d5197e0227b56fcc97d3a44fec00b3f2f122addb))
+* **alerts:** list the events the run detected on an alerts page ([#706](https://github.com/AsoBeast/asobeast/issues/706)) ([ec2ad3b](https://github.com/AsoBeast/asobeast/commit/ec2ad3be9029595f8e60184ed899c924738d479d))
+* **alerts:** turn on essential alerts for a new workspace ([#703](https://github.com/AsoBeast/asobeast/issues/703)) ([0a7adff](https://github.com/AsoBeast/asobeast/commit/0a7adffcc626146b2c65b985cb621d224b37d78e))
+* **api:** require a verified card to start the seven day trial ([#572](https://github.com/AsoBeast/asobeast/issues/572)) ([674c22e](https://github.com/AsoBeast/asobeast/commit/674c22e806601919f3db8fb7c443a8d796ef27d0))
+* **docker:** add a portainer app template ([#695](https://github.com/AsoBeast/asobeast/issues/695)) ([ae97792](https://github.com/AsoBeast/asobeast/commit/ae97792fb1af6a942d2ab1a93b08fc154717ca78))
+* **keywords:** classify each keyword as brand or generic ([#707](https://github.com/AsoBeast/asobeast/issues/707)) ([6741ca5](https://github.com/AsoBeast/asobeast/commit/6741ca59cbe191242f1ddec0cee092a2a3d11120))
+* **keywords:** lay the foundation for keyword discovery ([#693](https://github.com/AsoBeast/asobeast/issues/693)) ([8b13965](https://github.com/AsoBeast/asobeast/commit/8b1396533ef3f0953da65eeac5f6079fb28465e7))
+* **keywords:** show the last position of a keyword that lost its rank ([#708](https://github.com/AsoBeast/asobeast/issues/708)) ([c717c4b](https://github.com/AsoBeast/asobeast/commit/c717c4bf55cbab193d138036057577a8b72e297b))
+* **shared:** lift the competitor cap on self hosted instances ([#663](https://github.com/AsoBeast/asobeast/issues/663)) ([19217b0](https://github.com/AsoBeast/asobeast/commit/19217b0fe16b4c2b28b41c2fce06e26805fc8bd2))
+* **web:** add a what's new page with release notes in plain language ([#690](https://github.com/AsoBeast/asobeast/issues/690)) ([0923de0](https://github.com/AsoBeast/asobeast/commit/0923de001b90bee0ae1c172e34378c5b16c43014))
+* **web:** add insight badges and a totals row to the keywords table ([#698](https://github.com/AsoBeast/asobeast/issues/698)) ([1eb30d9](https://github.com/AsoBeast/asobeast/commit/1eb30d92eaef445569d82717d354c1f52cae281f))
+* **web:** chart the selected keywords' dynamics in the keywords table ([#702](https://github.com/AsoBeast/asobeast/issues/702)) ([b629dce](https://github.com/AsoBeast/asobeast/commit/b629dce6ae115805037e124d2f86a19953b82ba6))
+* **web:** confirm email first, then a paywall branded after the page ([#619](https://github.com/AsoBeast/asobeast/issues/619)) ([93cd17d](https://github.com/AsoBeast/asobeast/commit/93cd17deefb4b0ca3e569c2ec4fc827c051c1d8f))
+* **web:** fold accents in keyword table search ([#680](https://github.com/AsoBeast/asobeast/issues/680)) ([3e62b16](https://github.com/AsoBeast/asobeast/commit/3e62b164c65a154bc616869635c13d238dca53f9))
+* **web:** give the paywall a hero, a payment panel and plan cards ([#682](https://github.com/AsoBeast/asobeast/issues/682)) ([cedb874](https://github.com/AsoBeast/asobeast/commit/cedb8747d64347594c2bcb03b2e3409720aa9662))
+* **web:** link the store connections to step by step setup guides ([#691](https://github.com/AsoBeast/asobeast/issues/691)) ([ecf87a0](https://github.com/AsoBeast/asobeast/commit/ecf87a05e744e4c7dbacd012863ea761c361b3d4))
+* **web:** map tracked keywords by popularity and difficulty ([#694](https://github.com/AsoBeast/asobeast/issues/694)) ([cd935d2](https://github.com/AsoBeast/asobeast/commit/cd935d2b88730c76be6852c8601a2424e15dedcd))
+* **web:** mark the words each listing holds in the keyword table ([#699](https://github.com/AsoBeast/asobeast/issues/699)) ([a86e2c9](https://github.com/AsoBeast/asobeast/commit/a86e2c92871ec7442acdb67b778ac15ab4c77ecb))
+
+
+### Bug Fixes
+
+* **api:** end a lost trial once when the webhook and reconcile race ([#687](https://github.com/AsoBeast/asobeast/issues/687)) ([afdb83e](https://github.com/AsoBeast/asobeast/commit/afdb83e11111a674a9263c3303a3673964661402))
+* **jobs:** score keywords only for workspaces that may collect ([#658](https://github.com/AsoBeast/asobeast/issues/658)) ([c49f547](https://github.com/AsoBeast/asobeast/commit/c49f547b75b8899d27aeeda45b6bea7191c0acaa))
+* **web:** grade a rating by the one decimal it shows ([#697](https://github.com/AsoBeast/asobeast/issues/697)) ([a079c64](https://github.com/AsoBeast/asobeast/commit/a079c64eae2a7cd418ce8039eea1a95a911986d4))
+* **web:** keep the captured day picker e2e cases independent of the date ([#665](https://github.com/AsoBeast/asobeast/issues/665)) ([5d78c2c](https://github.com/AsoBeast/asobeast/commit/5d78c2cedd431f30a086453ad9f7e9fcac73cd94))
+* **web:** open one embedded checkout at a time and keep its refusal ours ([#683](https://github.com/AsoBeast/asobeast/issues/683)) ([a29b713](https://github.com/AsoBeast/asobeast/commit/a29b7132b461fdaa1761ce3e5093c81e80ae54df))
+
 ## [1.15.0](https://github.com/AsoBeast/asobeast/compare/v1.14.0...v1.15.0) (2026-10-31)
 
 
