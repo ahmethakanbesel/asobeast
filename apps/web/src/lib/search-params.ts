@@ -526,3 +526,10 @@ export const alertFeedParsers = {
 };
 
 export const loadAlertFeedSearch = createLoader(alertFeedParsers);
+
+export const inspectParsers = {
+  id: parseAsString,
+  keyword: parseAsString.withDefault(""),
+  store: parseAsStringLiteral(STORES).withDefault("APP_STORE"),
+  country: countryParser,
+};
