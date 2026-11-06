@@ -5,6 +5,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import {
   CheckCategoryPayload,
   DetectLocalizationPayload,
+  InspectKeywordPayload,
   JOBS,
   QUEUES,
   RefreshAppPayload,
@@ -41,6 +42,10 @@ export class JobTargetCountry {
       case JOBS.CHECK_KEYWORD:
       case JOBS.SCORE_KEYWORD:
         return this.keywordCountry((job.data as ScoreKeywordPayload).keywordId);
+      case JOBS.INSPECT_KEYWORD:
+        return this.inspectionCountry(
+          (job.data as InspectKeywordPayload).inspectionId,
+        );
       default:
         return undefined;
     }
@@ -52,6 +57,16 @@ export class JobTargetCountry {
       select: { country: true },
     });
     return app?.country;
+  }
+
+  private async inspectionCountry(
+    inspectionId: string,
+  ): Promise<string | undefined> {
+    const inspection = await this.prisma.keywordInspection.findFirst({
+      where: { id: inspectionId },
+      select: { keyword: { select: { country: true } } },
+    });
+    return inspection?.keyword.country;
   }
 
   private async keywordCountry(keywordId: string): Promise<string | undefined> {

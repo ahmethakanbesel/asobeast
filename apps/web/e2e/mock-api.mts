@@ -17,6 +17,13 @@ import "./keyword-insights.mts";
 import { planMockImport } from "./keyword-import.mts";
 import { summarizeActions } from "./actions-summary.mts";
 import { echoRequest } from "./echo-request.mts";
+import {
+  deleteInspection,
+  listInspections,
+  readInspection,
+  requestInspection,
+  resetInspections,
+} from "./keyword-inspections-mock.mts";
 import { funnelFor } from "./store-funnel.mts";
 import {
   STORE_CONNECT_OFF_COOKIE,
@@ -190,6 +197,7 @@ import {
   UNRANKED_PORTFOLIO_INSIGHTS,
 } from "./portfolio-insights.mts";
 import type {
+  KeywordInspectionRequest,
   AccountPlan,
   AppAnnotationCreateRequest,
   AppAnnotationItem,
@@ -2359,6 +2367,46 @@ function chartAnswer(req: IncomingMessage): [number, unknown] {
 }
 
 const routes: Route[] = [
+  {
+    method: "POST",
+    pattern: /^\/keyword-inspections$/,
+    handler: (_p, req, res) =>
+      withBody<KeywordInspectionRequest>(req, res, (body) =>
+        json(res, 202, requestInspection(body)),
+      ),
+  },
+  {
+    method: "GET",
+    pattern: /^\/keyword-inspections$/,
+    handler: (_p, _req, res) => json(res, 200, listInspections()),
+  },
+  {
+    method: "GET",
+    pattern: /^\/keyword-inspections\/([^/]+)$/,
+    handler: ([id], req, res) => {
+      const inspection = readInspection(id);
+      if (!inspection)
+        return json(res, 404, errorEnvelope(404, req.url ?? "/"));
+      json(res, 200, inspection);
+    },
+  },
+  {
+    method: "DELETE",
+    pattern: /^\/keyword-inspections\/([^/]+)$/,
+    handler: ([id], req, res) => {
+      if (!deleteInspection(id))
+        return json(res, 404, errorEnvelope(404, req.url ?? "/"));
+      res.writeHead(204).end();
+    },
+  },
+  {
+    method: "GET",
+    pattern: /^\/__reset-keyword-inspections$/,
+    handler: (_p, _req, res) => {
+      resetInspections();
+      json(res, 200, { ok: true });
+    },
+  },
   {
     method: "GET",
     pattern: /^\/charts$/,

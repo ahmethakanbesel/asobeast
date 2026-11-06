@@ -9,6 +9,7 @@ export * from "./rankings";
 export * from "./competitors";
 export * from "./annotations";
 export * from "./charts";
+export * from "./keyword-inspections";
 export * from "./analytics";
 export * from "./reviews";
 export * from "./audit";

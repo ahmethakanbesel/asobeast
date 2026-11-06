@@ -17,6 +17,7 @@ import { CategoryRanksModule } from '../category-ranks/category-ranks.module';
 import { ChartsModule } from '../charts/charts.module';
 import { Env } from '../config/env';
 import { redisConnection } from '../redis/redis-connection';
+import { KeywordInspectionsModule } from '../keyword-inspections/keyword-inspections.module';
 import { KeywordsModule } from '../keywords/keywords.module';
 import { RankingsModule } from '../rankings/rankings.module';
 import { ReviewsModule } from '../reviews/reviews.module';
@@ -107,6 +108,7 @@ const bullBoardModules: DynamicModule[] =
     CategoryRanksModule,
     ChartsModule,
     KeywordsModule,
+    KeywordInspectionsModule,
     ScoringModule,
     AlertsModule,
     AnalyticsModule,
