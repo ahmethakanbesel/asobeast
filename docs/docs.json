@@ -140,7 +140,9 @@
             "icon": "compass",
             "pages": [
               "guides/import-an-app",
+              "guides/setup-checklist",
               "guides/track-keywords",
+              "guides/keyword-discovery",
               "guides/keyword-inspections",
               "guides/read-rankings",
               "guides/competitors",

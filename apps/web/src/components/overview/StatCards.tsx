@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useSuspenseQuery } from "@tanstack/react-query";
+import type { AppSummary } from "@asobeast/shared";
 import {
   Card,
   CardContent,
@@ -11,9 +12,11 @@ import {
 } from "@/components/ui/card";
 import { formatDate } from "@/lib/format";
 import { useKeywordScope } from "@/components/app-detail/use-market";
+import { discoveriesHref, discoveriesLine } from "@/lib/keyword-discoveries";
 import { appSummaryOptions } from "@/lib/queries";
 import { TrendChip } from "@/components/ui/delta-chip";
 import { VisibilityHelp } from "@/components/visibility/VisibilityHelp";
+import { ShareOfVoiceLine } from "./ShareOfVoiceLine";
 
 export function StatCards({ id }: { id: string }) {
   const { country, switchable } = useKeywordScope(id);
@@ -34,9 +37,12 @@ export function StatCards({ id }: { id: string }) {
             {Math.round(summary.visibility.current)}
           </CardTitle>
         </CardHeader>
-        <CardContent className="flex gap-3">
-          <TrendChip label="7d" value={summary.visibility.delta7d} />
-          <TrendChip label="30d" value={summary.visibility.delta30d} />
+        <CardContent className="flex flex-col gap-3">
+          <div className="flex gap-3">
+            <TrendChip label="7d" value={summary.visibility.delta7d} />
+            <TrendChip label="30d" value={summary.visibility.delta30d} />
+          </div>
+          <ShareOfVoiceLine summary={summary} />
         </CardContent>
       </Card>
 
@@ -47,8 +53,9 @@ export function StatCards({ id }: { id: string }) {
             {summary.trackedKeywords}
           </CardTitle>
         </CardHeader>
-        <CardContent className="text-xs text-muted-foreground">
-          {`${summary.rankDistribution.top10} in top 10`}
+        <CardContent className="flex flex-col gap-1 text-xs text-muted-foreground">
+          <span>{`${summary.rankDistribution.top10} in top 10`}</span>
+          <DiscoveriesLink id={id} country={country} summary={summary} />
         </CardContent>
       </Card>
 
@@ -80,5 +87,26 @@ export function StatCards({ id }: { id: string }) {
         </CardHeader>
       </Card>
     </div>
+  );
+}
+
+function DiscoveriesLink({
+  id,
+  country,
+  summary,
+}: {
+  id: string;
+  country: string | undefined;
+  summary: AppSummary;
+}) {
+  const line = discoveriesLine(summary.discoveries);
+  if (line === null) return null;
+  return (
+    <Link
+      href={discoveriesHref(id, country)}
+      className="font-medium text-foreground underline decoration-primary underline-offset-4 hover:decoration-2 print:hidden"
+    >
+      {line}
+    </Link>
   );
 }

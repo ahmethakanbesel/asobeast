@@ -1,6 +1,8 @@
 import AxeBuilder from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
+import { hydrated } from "./hydrated.mts";
 import { expect, test } from "./session.mts";
+import { seedChecklist } from "./workspace-checklist.mts";
 
 interface NamedPopover {
   name: string;
@@ -10,6 +12,18 @@ interface NamedPopover {
 }
 
 const POPOVERS: NamedPopover[] = [
+  {
+    name: "Setup checklist",
+    path: "/apps/app-1",
+    open: async (page) => {
+      await seedChecklist(page.context(), "partial");
+      await page.reload();
+      const pill = page.getByRole("button", {
+        name: /done in the setup checklist$/,
+      });
+      await (await hydrated(pill)).click();
+    },
+  },
   {
     name: "Choose captured day",
     path: "/charts?view=table",
@@ -120,6 +134,30 @@ const POPOVERS: NamedPopover[] = [
     open: (page) =>
       page.getByRole("button", { name: "About insights" }).click(),
   },
+  {
+    name: "Insights",
+    where: "a keyword row",
+    path: "/apps/app-1/keywords",
+    open: (page) =>
+      page
+        .getByRole("button", { name: /: reasons for pomodoro \(US\)$/ })
+        .click(),
+  },
+  {
+    name: "How the gap lists are chosen",
+    path: "/apps/app-1/competitors",
+    open: (page) =>
+      page.getByRole("button", { name: "About gap analysis" }).click(),
+  },
+  ...["Rank", "Relevance", "Opportunity"].map((metric) => ({
+    name: metric,
+    where: "the discovered keywords",
+    path: "/apps/app-1/keywords?tab=discovered",
+    open: (page: Page) =>
+      page
+        .getByRole("button", { name: `About ${metric.toLowerCase()}` })
+        .click(),
+  })),
   {
     name: "Competitors in the top 10",
     path: "/apps/app-1/keywords",

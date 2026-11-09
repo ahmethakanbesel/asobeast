@@ -1,5 +1,10 @@
 import request from 'supertest';
-import type { TrackedKeywordItem } from '@asobeast/shared';
+import type {
+  AppSummary,
+  CompetitorAnalysis,
+  PortfolioSummary,
+  TrackedKeywordItem,
+} from '@asobeast/shared';
 import {
   createIsolationFixture,
   IsolationFixture,
@@ -41,6 +46,14 @@ const LISTS: ScopedRead[] = [
     name: 'GET /actions',
     path: () => '/actions',
     identity: (body) => ids((body as { items: { id: string }[] }).items),
+  },
+  {
+    name: 'GET /workspace/checklist',
+    path: () => '/workspace/checklist',
+    identity: (body) =>
+      (body as { items: { id: string; appId: string | null }[] }).items.map(
+        (item) => `${item.id}:${item.appId}`,
+      ),
   },
   {
     name: 'GET /webhooks',
@@ -135,6 +148,14 @@ const LISTS: ScopedRead[] = [
     identity: (body) => ids((body as { items: { id: string }[] }).items),
   },
   {
+    name: 'GET /apps/:id/keyword-discoveries',
+    path: (workspace) => `/apps/${workspace.appleAppId}/keyword-discoveries`,
+    identity: (body) =>
+      (body as { items: { keywordId: string }[] }).items
+        .map((item) => item.keywordId)
+        .sort(),
+  },
+  {
     name: 'GET /apps/:id/localizations',
     path: (workspace) => `/apps/${workspace.appleAppId}/localizations`,
     identity: (body) =>
@@ -204,6 +225,11 @@ const BY_ID = [
     path: (w: IsolationWorkspace) => `/apps/${w.appleAppId}/visibility-history`,
   },
   {
+    name: 'GET /apps/:id/visibility-history?compare=competitors',
+    path: (w: IsolationWorkspace) =>
+      `/apps/${w.appleAppId}/visibility-history?compare=competitors`,
+  },
+  {
     name: 'GET /apps/:id/ratings-history',
     path: (w: IsolationWorkspace) => `/apps/${w.appleAppId}/ratings-history`,
   },
@@ -261,6 +287,73 @@ describe('Read isolation', () => {
     },
   );
 
+  it('answers each workspace its own checklist goal and dismissal', async () => {
+    const dismissedAt = new Date('2026-11-04T08:00:00.000Z');
+    await fixture.db.workspace.update({
+      where: { id: fixture.a.id },
+      data: { checklistGoal: 'use_with_ai', checklistDismissedAt: dismissedAt },
+    });
+    await fixture.db.workspace.update({
+      where: { id: fixture.b.id },
+      data: { checklistGoal: 'research_idea', checklistDismissedAt: null },
+    });
+
+    const [forA, forB] = await Promise.all([
+      fixture.a.agent.get('/workspace/checklist').expect(200),
+      fixture.b.agent.get('/workspace/checklist').expect(200),
+    ]);
+
+    expect(forA.body).toMatchObject({
+      goal: 'use_with_ai',
+      dismissedAt: dismissedAt.toISOString(),
+    });
+    expect(forB.body).toMatchObject({
+      goal: 'research_idea',
+      dismissedAt: null,
+    });
+  });
+
+  it('keeps another workspace rankings out of the gap lists and the share of voice', async () => {
+    const gapsOf = async (workspace: IsolationWorkspace) =>
+      (
+        await workspace.agent
+          .get(`/apps/${workspace.appleAppId}/competitors/analysis`)
+          .expect(200)
+      ).body as CompetitorAnalysis;
+    const keywordIds = (rows: { keywordId: string }[] | undefined) =>
+      (rows ?? []).map(({ keywordId }) => keywordId);
+
+    const forA = await gapsOf(fixture.a);
+    const forB = await gapsOf(fixture.b);
+
+    expect(keywordIds(forA.gaps.lead)).toEqual([fixture.a.keywordId]);
+    expect(keywordIds(forB.gaps.lead)).toEqual([]);
+    expect(keywordIds(forB.gaps.outranked)).toEqual([fixture.b.keywordId]);
+    for (const [answer, other] of [
+      [forA, fixture.b],
+      [forB, fixture.a],
+    ] as const) {
+      expect(JSON.stringify(answer)).not.toContain(other.appleAppId);
+      expect(JSON.stringify(answer)).not.toContain(other.competitorId);
+    }
+
+    const shareOf = async (workspace: IsolationWorkspace) =>
+      (
+        (
+          await workspace.agent
+            .get(`/apps/${workspace.appleAppId}/summary`)
+            .expect(200)
+        ).body as AppSummary
+      ).shareOfVoice;
+    const shareA = await shareOf(fixture.a);
+    const shareB = await shareOf(fixture.b);
+
+    expect(shareA?.competitors).toBe(1);
+    expect(shareB?.competitors).toBe(1);
+    expect(shareA?.current).toBeGreaterThan(50);
+    expect(shareB?.current).toBeLessThan(50);
+  });
+
   it("refuses a breakdown of another workspace's private keyword", async () => {
     await fixture.b.agent
       .get(
@@ -273,6 +366,67 @@ describe('Read isolation', () => {
         `/apps/${fixture.a.appleAppId}/keywords/${fixture.b.privateKeywordId}/breakdown`,
       )
       .expect(404);
+  });
+
+  it("never lists another workspace's keyword discoveries", async () => {
+    const own = await fixture.b.agent
+      .get(`/apps/${fixture.b.appleAppId}/keyword-discoveries`)
+      .expect(200);
+    expect(JSON.stringify(own.body)).toContain(fixture.b.discoveryKeywordId);
+
+    const refused = await fixture.a.agent
+      .get(`/apps/${fixture.b.appleAppId}/keyword-discoveries`)
+      .expect(404);
+
+    expect(JSON.stringify(refused.body)).not.toContain(
+      fixture.b.discoveryKeywordId,
+    );
+  });
+
+  it("never counts another workspace's keyword discoveries", async () => {
+    const extra = await fixture.db.keyword.create({
+      data: { text: 'a second discovery', store: 'APP_STORE', country: 'us' },
+    });
+    await fixture.db.keywordDiscovery.create({
+      data: {
+        appId: fixture.a.appleAppId,
+        workspaceId: fixture.a.id,
+        keywordId: extra.id,
+        source: 'subtitle',
+        relevance: 90,
+        position: 7,
+        depth: 200,
+        checkedOn: new Date('2026-11-02T00:00:00.000Z'),
+      },
+    });
+    const discoveriesOf = async (workspace: IsolationWorkspace) => {
+      const portfolio = (await workspace.agent.get('/portfolio').expect(200))
+        .body as PortfolioSummary;
+      const summary = (
+        await workspace.agent
+          .get(`/apps/${workspace.appleAppId}/summary`)
+          .expect(200)
+      ).body as AppSummary;
+      return {
+        portfolio: portfolio.apps.find(
+          (entry) => entry.id === workspace.appleAppId,
+        )?.discoveries,
+        summary: summary.discoveries,
+      };
+    };
+
+    try {
+      expect(await discoveriesOf(fixture.a)).toEqual({
+        portfolio: { open: 2, ranked: 1 },
+        summary: { open: 2, ranked: 1 },
+      });
+      expect(await discoveriesOf(fixture.b)).toEqual({
+        portfolio: { open: 1, ranked: 0 },
+        summary: { open: 1, ranked: 0 },
+      });
+    } finally {
+      await fixture.db.keyword.delete({ where: { id: extra.id } });
+    }
   });
 
   it("never marks a word from another workspace's listing", async () => {

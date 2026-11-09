@@ -22,7 +22,8 @@ import {
   holdRequest,
   pressFromKeyboard,
 } from "./held-request.mts";
-import { seedLocalizations } from "./localizations.mts";
+import { DISCOVERY_FOCUS_APP } from "./keyword-discoveries.mts";
+import { MOCK_API_URL, seedLocalizations } from "./localizations.mts";
 import { fulfillJson } from "./plan-helpers.mts";
 import { activateTwiceInOneTask, hydrated } from "./hydrated.mts";
 import {
@@ -32,6 +33,8 @@ import {
 } from "./serp-track.mts";
 import { expect, test } from "./session.mts";
 import { STORE_CONNECTION_COOKIE } from "./store-connections.mts";
+import { startedSetup } from "./setup-session.mts";
+import { seedChecklist } from "./workspace-checklist.mts";
 
 const seedCookie = (context: BrowserContext, name: string, value = "1") =>
   context.addCookies([{ name, value, domain: "localhost", path: "/" }]);
@@ -1445,4 +1448,185 @@ test("Load more keeps focus while the next alerts load and hands it to the end",
   await expect(loadMore).toBeFocused();
   held.release();
   await expect(page.locator('[data-slot="feed-end"]')).toBeFocused();
+});
+
+test.describe("the keyword breakdown returns focus to the button that opened it", () => {
+  const openerOf = (page: Page, table: RegExp) =>
+    page
+      .getByRole("table", { name: table })
+      .getByRole("button", { name: "pomodoro, why apps rank" })
+      .first();
+
+  for (const [where, table] of [
+    ["a gap row", /^Keyword/],
+    ["the matrix", /compared with each tracked competitor/],
+  ] as const) {
+    test(`from ${where}`, async ({ page }) => {
+      await page.goto("/apps/app-1/competitors?gaps=threats");
+      await page.waitForLoadState("networkidle");
+      const opener = openerOf(page, table);
+
+      await opener.focus();
+      await page.keyboard.press("Enter");
+      await expect(
+        page.getByRole("dialog", { name: "Why apps rank for this keyword" }),
+      ).toBeVisible();
+      await page.keyboard.press("Escape");
+
+      await expect(opener).toBeFocused();
+    });
+  }
+});
+
+test("hiding the checklist keeps focus on the confirm action while it saves", async ({
+  page,
+  context,
+}) => {
+  await seedChecklist(context, "partial");
+  await page.goto("/apps/app-1");
+  await (
+    await hydrated(
+      page.getByRole("button", { name: /done in the setup checklist$/ }),
+    )
+  ).click();
+  await page
+    .getByRole("dialog", { name: "Setup checklist" })
+    .getByRole("button", { name: "Hide checklist" })
+    .click();
+  const confirm = page
+    .getByRole("alertdialog")
+    .getByRole("button", { name: /^(Hide checklist|Hiding…)$/ });
+  const held = await holdRequest(page, /\/workspace\/checklist$/, "PATCH");
+
+  await pressFromKeyboard(confirm);
+  await expect(confirm).toHaveAttribute("aria-disabled", "true");
+  await expect(confirm).toBeFocused();
+  held.release();
+
+  await expect(page.locator("#main-content")).toBeFocused();
+});
+
+test("the checklist switch keeps focus while it saves", async ({
+  page,
+  context,
+}) => {
+  await seedChecklist(context, "partial");
+  await page.goto("/settings");
+  const toggle = page.getByRole("switch", { name: "Show the setup checklist" });
+  const held = await holdRequest(page, /\/workspace\/checklist$/, "PATCH");
+
+  await (await hydrated(toggle)).focus();
+  await page.keyboard.press("Space");
+
+  await expectFocusKeptWhileHeld(toggle, held);
+});
+
+test("a goal keeps focus while its save runs", async ({ page, context }) => {
+  await startedSetup(context, "app-1");
+  await seedChecklist(context, "partial");
+  await page.goto("/apps/app-1/setup");
+  const research = page
+    .getByRole("group", { name: "What would you like to get done?" })
+    .getByRole("button", { name: /^Research an idea/ });
+  const held = await holdRequest(page, /\/workspace\/checklist$/, "PATCH");
+
+  await pressFromKeyboard(research);
+
+  await expectFocusKeptWhileHeld(research, held);
+});
+
+test.describe("keyword discovery controls keep focus", () => {
+  test.describe.configure({ mode: "serial" });
+
+  const discovered = (state = "") =>
+    `/apps/${DISCOVERY_FOCUS_APP}/keywords?tab=discovered${state}`;
+  const write = (action: string) =>
+    new RegExp(
+      `/api/backend/apps/${DISCOVERY_FOCUS_APP}/keyword-discoveries/${action}$`,
+    );
+
+  test.beforeEach(({ request }) =>
+    request.post(
+      `${MOCK_API_URL}/__reset/keyword-discoveries/${DISCOVERY_FOCUS_APP}`,
+      { failOnStatusCode: true },
+    ),
+  );
+
+  test("Refresh keeps focus while its request runs", async ({ page }) => {
+    const held = await holdRequest(page, write("refresh"), "POST");
+    await page.goto(discovered());
+    const refresh = page.getByRole("button", {
+      name: "Refresh discoveries",
+    });
+
+    await pressFromKeyboard(refresh);
+
+    await expectFocusKeptWhileHeld(refresh, held);
+  });
+
+  test("Auto-track ranked keeps focus while its request runs", async ({
+    page,
+  }) => {
+    const held = await holdRequest(page, write("settings"), "PATCH");
+    await page.goto(discovered());
+    const toggle = page.getByRole("switch", { name: "Auto-track ranked" });
+
+    await pressFromKeyboard(toggle);
+
+    await expectFocusKeptWhileHeld(toggle, held);
+  });
+
+  for (const name of ["Track recommended", "Track all ranked"]) {
+    test(`${name} keeps focus while its request runs`, async ({ page }) => {
+      const held = await holdRequest(page, write("track"), "POST");
+      await page.goto(discovered());
+      const bulk = page.getByRole("button", { name: new RegExp(`^${name}`) });
+
+      await pressFromKeyboard(bulk);
+
+      await expect(bulk).toHaveAttribute("aria-disabled", "true");
+      await expect(bulk).toBeFocused();
+      held.release();
+      await page.waitForLoadState("networkidle");
+      await expect(bulk).toBeFocused();
+    });
+  }
+
+  for (const action of ["Track", "Dismiss"]) {
+    test(`${action} hands focus to the next row once its row leaves`, async ({
+      page,
+    }) => {
+      const held = await holdRequest(
+        page,
+        write(action === "Track" ? "track" : "dismiss"),
+        "POST",
+      );
+      await page.goto(discovered());
+      const leaving = page.getByRole("button", {
+        name: `${action} pomodoro clock`,
+        exact: true,
+      });
+
+      await pressFromKeyboard(leaving);
+
+      await expect(leaving).toHaveAttribute("aria-disabled", "true");
+      await expect(leaving).toBeFocused();
+      held.release();
+      await expect(
+        page.getByRole("button", { name: `${action} deep work`, exact: true }),
+      ).toBeFocused();
+    });
+  }
+
+  test("the last row hands focus to the panel heading", async ({ page }) => {
+    await page.goto(discovered("&state=opportunity"));
+
+    await pressFromKeyboard(
+      page.getByRole("button", { name: "Dismiss study planner", exact: true }),
+    );
+
+    await expect(
+      page.getByRole("heading", { name: "Discovered keywords" }),
+    ).toBeFocused();
+  });
 });

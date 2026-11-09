@@ -30,6 +30,26 @@ describe('Write isolation', () => {
     ).resolves.toBe(1);
   });
 
+  it('saves the checklist goal and dismissal of the caller workspace only', async () => {
+    await fixture.a.agent
+      .patch('/workspace/checklist')
+      .send({ goal: 'research_idea', dismissed: true })
+      .expect(200);
+
+    const [a, b] = await Promise.all(
+      [fixture.a.id, fixture.b.id].map((id) =>
+        fixture.db.workspace.findUniqueOrThrow({
+          where: { id },
+          select: { checklistGoal: true, checklistDismissedAt: true },
+        }),
+      ),
+    );
+
+    expect(a.checklistGoal).toBe('research_idea');
+    expect(a.checklistDismissedAt).toBeInstanceOf(Date);
+    expect(b).toEqual({ checklistGoal: null, checklistDismissedAt: null });
+  });
+
   it('stamps the caller workspace on a create that names none', async () => {
     const created = await fixture.a.agent
       .post('/webhooks')
@@ -233,6 +253,54 @@ describe('Write isolation', () => {
     await expect(
       fixture.db.app.count({ where: { id: fixture.b.competitorId } }),
     ).resolves.toBe(1);
+  });
+
+  it("never tracks or dismisses another workspace's keyword discoveries", async () => {
+    const foreign = [fixture.b.discoveryKeywordId];
+
+    await expect(
+      fixture.a.agent
+        .post(`/apps/${fixture.a.appleAppId}/keyword-discoveries/track`)
+        .send({ keywordIds: foreign })
+        .expect(200),
+    ).resolves.toMatchObject({ body: { tracked: 0, skipped: 0 } });
+    await expect(
+      fixture.a.agent
+        .post(`/apps/${fixture.a.appleAppId}/keyword-discoveries/dismiss`)
+        .send({ keywordIds: foreign })
+        .expect(200),
+    ).resolves.toMatchObject({ body: { dismissed: 0 } });
+    for (const [method, action, body] of [
+      ['post', 'track', { keywordIds: foreign }],
+      ['post', 'dismiss', { keywordIds: foreign }],
+      ['post', 'refresh', {}],
+      ['patch', 'settings', { autoTrackRanked: true }],
+    ] as const) {
+      await fixture.a.agent[method](
+        `/apps/${fixture.b.appleAppId}/keyword-discoveries/${action}`,
+      )
+        .send(body)
+        .expect(404);
+    }
+
+    await expect(
+      fixture.db.keywordDiscovery.findUniqueOrThrow({
+        where: {
+          appId_keywordId: {
+            appId: fixture.b.appleAppId,
+            keywordId: fixture.b.discoveryKeywordId,
+          },
+        },
+      }),
+    ).resolves.toMatchObject({ dismissedAt: null, queuedAt: null });
+    await expect(
+      fixture.db.app.findUniqueOrThrow({ where: { id: fixture.b.appleAppId } }),
+    ).resolves.toMatchObject({ autoTrackRanked: false });
+    await expect(
+      fixture.db.trackedKeyword.count({
+        where: { keywordId: fixture.b.discoveryKeywordId },
+      }),
+    ).resolves.toBe(0);
   });
 
   it('refuses to write the keyword field of another workspace app', async () => {

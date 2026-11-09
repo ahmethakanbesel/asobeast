@@ -17,6 +17,7 @@ import { CategoryRanksModule } from '../category-ranks/category-ranks.module';
 import { ChartsModule } from '../charts/charts.module';
 import { Env } from '../config/env';
 import { redisConnection } from '../redis/redis-connection';
+import { KeywordDiscoveryModule } from '../keyword-discovery/keyword-discovery.module';
 import { KeywordInspectionsModule } from '../keyword-inspections/keyword-inspections.module';
 import { KeywordsModule } from '../keywords/keywords.module';
 import { RankingsModule } from '../rankings/rankings.module';
@@ -29,6 +30,7 @@ import { DigestDispatcher } from './digest.dispatcher';
 import { GplayWorker } from './gplay.worker';
 import { ActiveWorkspaces } from './active-workspaces';
 import { DefaultAlertsRun } from './default-alerts-run';
+import { KeywordDiscoverySweep } from './keyword-discovery-sweep.service';
 import { LocalizationSweep } from './localization-sweep.service';
 import { StoreReportFanOut } from './store-report-fanout';
 import { StoreConnectModule } from '../store-connect/store-connect.module';
@@ -108,6 +110,7 @@ const bullBoardModules: DynamicModule[] =
     CategoryRanksModule,
     ChartsModule,
     KeywordsModule,
+    KeywordDiscoveryModule,
     KeywordInspectionsModule,
     ScoringModule,
     AlertsModule,
@@ -130,6 +133,7 @@ const bullBoardModules: DynamicModule[] =
     DefaultAlertsRun,
     ActiveWorkspaces,
     LocalizationSweep,
+    KeywordDiscoverySweep,
     StoreReportFanOut,
     CapacityService,
     DailyBudgetService,

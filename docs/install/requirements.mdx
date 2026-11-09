@@ -12,7 +12,7 @@ Docker with the Compose plugin is the only hard requirement. PostgreSQL, Redis, 
 | Requirement | Value | Why |
 | --- | --- | --- |
 | Docker Engine | Current release with the Compose plugin | Runs every service. `docker compose version` must succeed |
-| Memory | Roughly 2.5 GB free | Four containers with memory ceilings summing to about 2.1 GB, of which the API is the largest. See [Capacity](/operations/capacity) |
+| Memory | Roughly 2.5 GB free | Four containers with memory ceilings summing to about 2.2 GB, of which the API is the largest. See [Capacity](/operations/capacity) |
 | Disk | Roughly 5 GB free | The PostgreSQL volume grows with ranking history. Retention settings bound it, and container logs are capped at 30 MB per service. The API image is about 95 MB larger than before the screenshot reader: the OCR engine, the language packs and the image library |
 | Network | Outbound HTTPS | Store collection runs from this machine |
 | Architecture | `linux/amd64` or `linux/arm64` | Published images are multi architecture |
@@ -29,7 +29,7 @@ Memory and disk are not what runs out first. The store rate limits are, and they
 | Even split | Roughly 3,600 | The same, for a quarter of the markets |
 | Play only | Roughly 1,800 | The same again |
 
-A workload of 75,000 keyword markets with 90 days of history measured 2 GB of database and took PostgreSQL to 94 percent of its 384 MB ceiling, so plan disk from your own market count rather than from the 5 GB above once you pass a few thousand markets. The measured sizes above leave out stored search results, which take about 0.9 MB per tracked keyword market with the default retention (the top 10 for 90 days, positions 11 to 50 for 30 days).
+A workload of 75,000 keyword markets with 90 days of history measured 2 GB of database and took PostgreSQL to 94 percent of a 384 MB ceiling, so plan disk from your own market count rather than from the 5 GB above once you pass a few thousand markets. The measured sizes above leave out stored search results, which take about 0.9 MB per tracked keyword market with the default retention (the top 10 for 90 days, positions 11 to 50 for 30 days).
 
 ## What ships with the stack?
 
@@ -68,11 +68,11 @@ Outbound connections to your own SMTP relay, your own webhook endpoints and the 
 
 ## Which ports does asobeast publish?
 
-One. The web container publishes host port `3001`, mapped to its port `3000`, and nothing else is reachable from outside the Docker network.
+One. The web container publishes host port `3001`, or the port `ASOBEAST_PORT` names, mapped to its port `3000`, and nothing else is reachable from outside the Docker network.
 
 | Port | Service | Published |
 | --- | --- | --- |
-| 3001 on the host, 3000 in the container | `web` | Yes, this is the only entry point |
+| 3001 on the host (`ASOBEAST_PORT`), 3000 in the container | `web` | Yes, this is the only entry point |
 | 4000 | `api` | No, private to the Compose network |
 | 5432 | `postgres` | No, the backend network is marked internal |
 | 6379 | `redis` | No, the backend network is marked internal |
@@ -80,7 +80,7 @@ One. The web container publishes host port `3001`, mapped to its port `3000`, an
 The browser reaches the API through `/api/backend/*` on the web origin, which forwards to `API_INTERNAL_URL`. The development Compose file is different on purpose: it publishes `5433` and `6380` on `127.0.0.1` so a locally running API can reach them.
 
 <Warning>
-  Publishing host port 3001 to the internet without TLS in front of it sends session cookies in the clear. Terminate TLS at a reverse proxy. `AUTH_COOKIE_SECURE` is already `true` in the Compose stack and must stay so, because the Docker image refuses to boot without it.
+  Publishing the web host port to the internet without TLS in front of it sends session cookies in the clear. Terminate TLS at a reverse proxy. `AUTH_COOKIE_SECURE` is already `true` in the Compose stack and must stay so, because the Docker image refuses to boot without it.
 </Warning>
 
 ## Next steps

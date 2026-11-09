@@ -62,6 +62,8 @@ export const JOBS = {
   SCORE_KEYWORD: 'score-keyword',
   INSPECT_KEYWORD: 'inspect-keyword',
   SPIDER_PROBE: 'spider-probe',
+  DISCOVER_KEYWORD: 'discover-keyword',
+  KEYWORD_DISCOVERY: 'keyword-discovery',
   DETECT_LOCALIZATION: 'detect-localization',
   SYNC_REVIEWS: 'sync-reviews',
   DELIVER_ALERT: 'deliver-alert',
@@ -217,6 +219,19 @@ export function isoWeekKey(date = new Date()): string {
     ((day.getTime() - yearStart.getTime()) / 86_400_000 + 1) / 7,
   );
   return `${day.getUTCFullYear()}-W${String(week).padStart(2, '0')}`;
+}
+
+export interface DiscoverKeywordPayload extends WorkspaceJobPayload {
+  appId: string;
+  keywordId: string;
+}
+
+export function discoverKeywordJobId(
+  appId: string,
+  keywordId: string,
+  week: string,
+): string {
+  return ['discover', appId, keywordId, week].join('~');
 }
 
 export function scoreJobId(keywordId: string, bucket: string): string {

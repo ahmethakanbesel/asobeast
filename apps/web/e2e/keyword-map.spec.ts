@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import type { Page } from "@playwright/test";
 import { contrastViolations, THEMES } from "./contrast-check.mts";
 import { holdRequest } from "./held-request.mts";
+import { hydrated } from "./hydrated.mts";
 import {
   APP_MAP_GP_ID,
   APP_MAP_ID,
@@ -297,7 +298,7 @@ test.describe("the opportunity map", () => {
     await expect(dots(page)).toHaveCount(7);
     await page.goto(`${MAP_URL}&status=paused`);
     await expect(mapCard(page)).toContainText("Too few scored keywords");
-    await expect(mapCard(page)).toContainText("1 of 4 so far");
+    await expect(mapCard(page)).toContainText("These filters leave 1.");
   });
 
   test("a zone dims, it does not remove", async ({ page }) => {
@@ -534,7 +535,9 @@ test.describe("zones and thresholds", () => {
 
   test("a click on an empty zone presses it", async ({ page }) => {
     const clickEmptyQuickWins = async () => {
-      const box = await page.locator(".zone-quickWins").first().boundingBox();
+      const zone = page.locator(".zone-quickWins").first();
+      await zone.scrollIntoViewIfNeeded();
+      const box = await zone.boundingBox();
       if (!box) throw new Error("no quick wins area");
       await page.mouse.click(
         box.x + box.width * 0.2,
@@ -791,15 +794,54 @@ test.describe("zones and thresholds", () => {
     );
   });
 
-  test("the legend fits at 320 px", async ({ page }) => {
+  test("the map card keeps its server rendered place at 320 px after hydration", async ({
+    page,
+    context,
+  }) => {
+    const serverRender = await context.newPage();
+    await serverRender.setViewportSize({ width: 320, height: 900 });
+    await serverRender.route("**/_next/static/chunks/**", (route) =>
+      route.request().resourceType() === "script"
+        ? route.abort()
+        : route.continue(),
+    );
+    await serverRender.goto(MAP_URL);
+    await expect(mapCard(serverRender)).toBeVisible();
+    await serverRender.evaluate(() => document.fonts.ready);
+    const served = await mapCard(serverRender).boundingBox();
+    await serverRender.close();
+
     await page.setViewportSize({ width: 320, height: 900 });
     await page.goto(MAP_URL);
+    await hydrated(page.getByRole("button", { name: "Columns" }));
+    await expect(dots(page).first()).toBeVisible();
+    await page.evaluate(() => document.fonts.ready);
+    const settled = await mapCard(page).boundingBox();
+
+    expect(served).not.toBeNull();
+    expect(settled?.y).toBe(served?.y);
+  });
+
+  test("the legend fits at 320 px", async ({ page }) => {
+    const narrow = { width: 320, height: 900 };
+    await page.setViewportSize(narrow);
+    await page.goto(MAP_URL);
     const items = legend(page).getByRole("listitem");
-    const first = await items.nth(0).boundingBox();
-    const second = await items.nth(1).boundingBox();
-    const third = await items.nth(2).boundingBox();
-    expect(first && second && Math.abs(first.y - second.y) < 2).toBe(true);
-    expect(first && third && third.y > first.y).toBe(true);
+    await expect(items).toHaveCount(4);
+    const boxes = await items.evaluateAll((elements) =>
+      elements.map((element) => {
+        const { y, left, right } = element.getBoundingClientRect();
+        return { y, left, right };
+      }),
+    );
+    const [first, second, third, fourth] = boxes;
+    expect(Math.abs(first.y - second.y)).toBeLessThan(2);
+    expect(Math.abs(third.y - fourth.y)).toBeLessThan(2);
+    expect(third.y).toBeGreaterThan(first.y);
+    for (const { left, right } of boxes) {
+      expect(left).toBeGreaterThanOrEqual(0);
+      expect(right).toBeLessThanOrEqual(narrow.width);
+    }
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= window.innerWidth,

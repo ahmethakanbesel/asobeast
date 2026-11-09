@@ -11,12 +11,29 @@ import {
   filterAlertEvents,
 } from "./alert-feed-fixtures.mts";
 import { BREAKDOWNS } from "./keyword-breakdowns.mts";
+import { analysisOf, visibilityComparedFor } from "./gap-mock.mts";
 import { SERP_HISTORY, serpOnDay } from "./serp-history.mts";
 import "./keyword-map.mts";
 import "./keyword-insights.mts";
 import { planMockImport } from "./keyword-import.mts";
 import { summarizeActions } from "./actions-summary.mts";
 import { echoRequest } from "./echo-request.mts";
+import {
+  discoveriesFor,
+  DISCOVERY_COMPETITOR_REFUSAL,
+  DISCOVERY_FAIL_WRITE_COOKIE,
+  DISCOVERY_NONE_COOKIE,
+  DISCOVERY_PENDING_COOKIE,
+  DISCOVERY_REFUSE_COOKIE,
+  DISCOVERY_SPENT_COOKIE,
+  DISCOVERY_UNFIT_COOKIE,
+  dismissDiscoveries,
+  refreshDiscoveries,
+  resetDiscoveries,
+  setDiscoverySettings,
+  spiderRefusedEnvelope,
+  trackDiscoveries,
+} from "./keyword-discoveries.mts";
 import {
   deleteInspection,
   listInspections,
@@ -146,6 +163,7 @@ import {
   UNSUBSCRIBED_RECIPIENT,
   OVER_LIMIT_BUDGET,
   PORTFOLIO,
+  UNDISCOVERED_BUDGET,
   RATE_LIMIT_RESET_SECONDS,
   RECENT_CHANGES,
   SCREENSHOTS,
@@ -181,6 +199,8 @@ import {
   CROWDED_COMPARISON,
   UNCHECKED_COMPARISON,
   UNCHECKED_COMPARISON_COOKIE,
+  GAP_STATE_COOKIE,
+  FAIL_ANALYSIS_COOKIE,
   CROWDED_COMPETITORS,
   CROWDED_COMPETITORS_COOKIE,
   DELISTED_AT,
@@ -199,6 +219,9 @@ import {
 import type {
   KeywordInspectionRequest,
   AccountPlan,
+  KeywordDiscoveryDismissRequest,
+  KeywordDiscoverySettingsRequest,
+  KeywordDiscoveryTrackRequest,
   AppAnnotationCreateRequest,
   AppAnnotationItem,
   AppDetail,
@@ -269,12 +292,14 @@ import type {
   WorkspaceDeletionStatus,
   AppSetupState,
   AppSetupUpdateRequest,
+  WorkspaceChecklistUpdateRequest,
   KeywordComparison,
   SerpEntryItem,
   SerpSnapshot,
   StoreImportState,
 } from "@asobeast/shared";
 import {
+  WORKSPACE_GOALS,
   COUNTRY_PATTERN,
   DELETION_CONFIRMATION,
   KEYWORD_BULK_ADD_LIMIT,
@@ -318,6 +343,16 @@ import {
   webhookChannelOf,
 } from "@asobeast/shared";
 import { SETUP_SESSION_COOKIE } from "./setup-session.mts";
+import {
+  CHECKLIST_COOKIE,
+  CHECKLIST_FAIL_COOKIE,
+  CHECKLIST_READ_FAIL_COOKIE,
+  checklistOf,
+  HIDDEN_BY_DEFAULT,
+  isChecklistScenario,
+  VISIBLE,
+  type ChecklistPreferences,
+} from "./workspace-checklist.mts";
 import {
   ALL_VIEWERS,
   OWNER_ID,
@@ -467,6 +502,48 @@ function setupSession(req: IncomingMessage): Map<string, AppSetupState> {
   const setups = setupSessions.get(session) ?? new Map();
   setupSessions.set(session, setups);
   return setups;
+}
+
+const checklistSessions = new Map<string, ChecklistPreferences>();
+
+const checklistSessionOf = (req: IncomingMessage): string =>
+  cookieValue(req, SETUP_SESSION_COOKIE) ?? "";
+
+function checklistPreferencesOf(req: IncomingMessage): ChecklistPreferences {
+  return checklistSessions.get(checklistSessionOf(req)) ?? VISIBLE;
+}
+
+function workspaceChecklistAnswer(req: IncomingMessage) {
+  const scenario = cookieValue(req, CHECKLIST_COOKIE);
+  return isChecklistScenario(scenario)
+    ? checklistOf(scenario, checklistPreferencesOf(req))
+    : checklistOf("partial", HIDDEN_BY_DEFAULT);
+}
+
+function refusesChecklistPatch(
+  patch: WorkspaceChecklistUpdateRequest,
+): boolean {
+  const goal: unknown = patch.goal;
+  const dismissed: unknown = patch.dismissed;
+  const knownGoal =
+    goal === undefined ||
+    goal === null ||
+    WORKSPACE_GOALS.some((candidate) => candidate === goal);
+  const knownDismissal =
+    dismissed === undefined || typeof dismissed === "boolean";
+  return !knownGoal || !knownDismissal;
+}
+
+function patchChecklistPreferences(
+  current: ChecklistPreferences,
+  patch: WorkspaceChecklistUpdateRequest,
+): ChecklistPreferences {
+  const goal = patch.goal === undefined ? current.goal : patch.goal;
+  if (patch.dismissed === undefined) return { ...current, goal };
+  const dismissedAt = patch.dismissed
+    ? (current.dismissedAt ?? new Date().toISOString())
+    : null;
+  return { goal, dismissedAt };
 }
 
 function setupOf(
@@ -992,6 +1069,32 @@ function appRoute(
         200,
         pick(dataset, new URL(path, "http://localhost").searchParams, req),
       );
+    },
+  };
+}
+
+function discoveryWrite<T>(
+  method: "POST" | "PATCH",
+  pattern: RegExp,
+  handle: (
+    id: string,
+    req: IncomingMessage,
+    res: ServerResponse,
+    body: T,
+  ) => void,
+): Route {
+  return {
+    method,
+    pattern,
+    handler: ([id], req, res) => {
+      withBody<T>(req, res, (body) => {
+        const path = req.url ?? "/";
+        if (!DATASETS[id]) return json(res, 404, errorEnvelope(404, path));
+        if (hasCookie(req, DISCOVERY_FAIL_WRITE_COOKIE, "1")) {
+          return json(res, 500, errorEnvelope(500, path));
+        }
+        handle(id, req, res, body);
+      });
     },
   };
 }
@@ -2166,6 +2269,7 @@ const BUDGETS_BY_QUOTA = new Map<string | undefined, DailyBudget>([
   ["lapsed", LAPSED_BUDGET],
   ["over", OVER_LIMIT_BUDGET],
   ["markets", MARKET_BUDGET],
+  ["undiscovered", UNDISCOVERED_BUDGET],
 ]);
 const INSIGHTS_HOLD_COOKIE = "e2e_insights_hold";
 
@@ -3517,6 +3621,41 @@ const routes: Route[] = [
       isPolishListingOf(dataset, query) ? APP_1_PL_DETAIL : dataset.detail,
     ),
   ),
+  {
+    method: "GET",
+    pattern: /^\/workspace\/checklist$/,
+    handler: (_p, req, res) => {
+      if (hasCookie(req, CHECKLIST_READ_FAIL_COOKIE, "1")) {
+        return json(res, 500, errorEnvelope(500, req.url ?? "/"));
+      }
+      json(res, 200, workspaceChecklistAnswer(req));
+    },
+  },
+  {
+    method: "PATCH",
+    pattern: /^\/workspace\/checklist$/,
+    handler: (_p, req, res) => {
+      const path = req.url ?? "/";
+      withBody<WorkspaceChecklistUpdateRequest>(req, res, (patch) => {
+        if (refusesChecklistPatch(patch)) {
+          return json(res, 400, errorEnvelope(400, path));
+        }
+        if (hasCookie(req, CHECKLIST_FAIL_COOKIE, "1")) {
+          return json(res, 500, errorEnvelope(500, path));
+        }
+        const scenario = cookieValue(req, CHECKLIST_COOKIE);
+        if (!isChecklistScenario(scenario)) {
+          return json(res, 200, checklistOf("partial", HIDDEN_BY_DEFAULT));
+        }
+        const next = patchChecklistPreferences(
+          checklistPreferencesOf(req),
+          patch,
+        );
+        checklistSessions.set(checklistSessionOf(req), next);
+        json(res, 200, checklistOf(scenario, next));
+      });
+    },
+  },
   appRoute(/^\/apps\/([^/]+)\/setup$/, (dataset, _query, req) =>
     setupOf(req, dataset.detail),
   ),
@@ -3584,6 +3723,83 @@ const routes: Route[] = [
   appRoute(/^\/apps\/([^/]+)\/funnel$/, (dataset, query) =>
     funnelFor(dataset.detail.id, query.get("country")),
   ),
+  {
+    method: "GET",
+    pattern: /^\/apps\/([^/]+)\/keyword-discoveries$/,
+    handler: ([id], req, res) => {
+      const path = req.url ?? "/";
+      if (id === ERROR_ID || hasCookie(req, "e2e-fail-app", "1")) {
+        return json(res, 500, errorEnvelope(500, path));
+      }
+      const dataset = DATASETS[id];
+      if (!dataset) return json(res, 404, errorEnvelope(404, path));
+      if (dataset.detail.isCompetitor) {
+        return json(
+          res,
+          400,
+          errorEnvelope(400, path, DISCOVERY_COMPETITOR_REFUSAL),
+        );
+      }
+      json(
+        res,
+        200,
+        discoveriesFor(
+          id,
+          dataset.detail.store,
+          new URL(path, "http://localhost").searchParams.get("country"),
+          {
+            pending: hasCookie(req, DISCOVERY_PENDING_COOKIE, "1"),
+            none: hasCookie(req, DISCOVERY_NONE_COOKIE, "1"),
+            unfit: hasCookie(req, DISCOVERY_UNFIT_COOKIE, "1"),
+          },
+        ),
+      );
+    },
+  },
+  discoveryWrite(
+    "POST",
+    /^\/apps\/([^/]+)\/keyword-discoveries\/track$/,
+    (id, req, res, body: KeywordDiscoveryTrackRequest) =>
+      json(
+        res,
+        200,
+        trackDiscoveries(id, body, hasCookie(req, DISCOVERY_UNFIT_COOKIE, "1")),
+      ),
+  ),
+  discoveryWrite(
+    "POST",
+    /^\/apps\/([^/]+)\/keyword-discoveries\/dismiss$/,
+    (id, _req, res, body: KeywordDiscoveryDismissRequest) =>
+      json(res, 200, dismissDiscoveries(id, body.keywordIds)),
+  ),
+  discoveryWrite(
+    "POST",
+    /^\/apps\/([^/]+)\/keyword-discoveries\/refresh$/,
+    (id, req, res) =>
+      hasCookie(req, DISCOVERY_REFUSE_COOKIE, "1")
+        ? json(res, 429, spiderRefusedEnvelope(req.url ?? "/"), {
+            "retry-after": "4",
+          })
+        : json(
+            res,
+            202,
+            refreshDiscoveries(id, hasCookie(req, DISCOVERY_SPENT_COOKIE, "1")),
+          ),
+  ),
+  discoveryWrite(
+    "PATCH",
+    /^\/apps\/([^/]+)\/keyword-discoveries\/settings$/,
+    (id, _req, res, body: KeywordDiscoverySettingsRequest) =>
+      json(res, 200, setDiscoverySettings(id, body.autoTrackRanked)),
+  ),
+  {
+    method: "POST",
+    pattern: /^\/__reset\/keyword-discoveries(?:\/([^/]+))?$/,
+    handler: ([id], _req, res) => {
+      resetDiscoveries(id);
+      json(res, 200, { reset: true });
+    },
+  },
   appRoute(/^\/apps\/([^/]+)\/summary$/, (dataset, query) =>
     dataset.detail.id === "app-1"
       ? (APP_1_MARKET_SUMMARIES[query.get("country") ?? ""] ?? dataset.summary)
@@ -4099,7 +4315,7 @@ const routes: Route[] = [
   ),
   {
     method: "GET",
-    pattern: /^\/__log\/(discovery|compare)-requests\/([^/]+)$/,
+    pattern: /^\/__log\/(discovery|compare|analysis)-requests\/([^/]+)$/,
     handler: ([kind, token], _req, res) =>
       json(res, 200, { count: loggedRequests.get(`${kind}:${token}`) ?? 0 }),
   },
@@ -4244,9 +4460,18 @@ const routes: Route[] = [
       json(res, 200, { reset: true });
     },
   },
+  appRoute(/^\/apps\/([^/]+)\/visibility-history$/, (dataset, query) =>
+    query.get("compare") === "competitors"
+      ? visibilityComparedFor(dataset, query)
+      : dataset.visibility,
+  ),
   appRoute(
-    /^\/apps\/([^/]+)\/visibility-history$/,
-    (dataset) => dataset.visibility,
+    /^\/apps\/([^/]+)\/competitors\/analysis$/,
+    (dataset, _query, req) => {
+      countLoggedRequest("analysis", req);
+      return analysisOf(dataset, cookieValue(req, GAP_STATE_COOKIE));
+    },
+    (req) => hasCookie(req, FAIL_ANALYSIS_COOKIE, "1"),
   ),
   appRoute(
     /^\/apps\/([^/]+)\/rank-distribution-history$/,

@@ -1,3 +1,5 @@
+import type { KeywordDiscoveryCount } from './keyword-discoveries';
+
 export interface VisibilitySummary {
   current: number;
   delta7d: number | null;
@@ -40,6 +42,29 @@ export interface CoverageSummary {
   uncoveredHighOpportunity: UncoveredKeyword[];
 }
 
+export const SHARE_OF_VOICE_REASONS = [
+  'noCompetitors',
+  'notChecked',
+  'nobodyRanks',
+] as const;
+export type ShareOfVoiceReason = (typeof SHARE_OF_VOICE_REASONS)[number];
+
+export interface ShareOfVoice {
+  current: number | null;
+  delta7d: number | null;
+  competitors: number;
+  reason?: ShareOfVoiceReason;
+}
+
+export interface ShareOfVoicePoint {
+  date: string;
+  share: number;
+  competitors: number;
+}
+
+export const VISIBILITY_COMPARISONS = ['competitors'] as const;
+export type VisibilityComparison = (typeof VISIBILITY_COMPARISONS)[number];
+
 export interface AppSummary {
   visibility: VisibilitySummary;
   rankDistribution: RankDistribution;
@@ -48,6 +73,9 @@ export interface AppSummary {
   lastRefreshAt: string | null;
   trackedKeywords: number;
   competitors: number;
+  shareOfVoice?: ShareOfVoice;
+  nonBrandedShareOfVoice?: ShareOfVoice;
+  discoveries?: KeywordDiscoveryCount;
 }
 
 export interface VisibilityPoint {
@@ -57,6 +85,8 @@ export interface VisibilityPoint {
 
 export interface VisibilityHistory {
   points: VisibilityPoint[];
+  shareOfVoice?: ShareOfVoicePoint[];
+  nonBrandedShareOfVoice?: ShareOfVoicePoint[];
 }
 
 export interface RankDistributionPoint {

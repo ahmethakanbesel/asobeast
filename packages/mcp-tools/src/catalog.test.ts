@@ -154,9 +154,40 @@ describe("the tool catalog", () => {
       "get_app",
       "app_summary",
       "app_run_status",
+      "workspace_checklist",
       "portfolio",
       "market_suggestions",
     ]);
+  });
+
+  it("reads the workspace checklist with no argument", () => {
+    const tool = toolByName("workspace_checklist");
+
+    expect(tool?.request({})).toEqual({ path: "/workspace/checklist" });
+    expect(tool?.inputSchema.safeParse({}).success).toBe(true);
+    expect(tool && annotationsOf(tool)).toMatchObject({ readOnlyHint: true });
+  });
+
+  it("tells an agent how to read the workspace checklist", () => {
+    const description = toolByName("workspace_checklist")?.description ?? "";
+
+    for (const word of [
+      "goal",
+      "dismissedAt",
+      "appId",
+      "left out",
+      "up to eight",
+      "web app",
+    ]) {
+      expect(description).toContain(word);
+    }
+    expect(description).not.toContain("call the tool that does it");
+  });
+
+  it("says the workspace checklist needs a newer api on a 404", () => {
+    expect(toolByName("workspace_checklist")?.unavailableOn404).toContain(
+      "newer asobeast API",
+    );
   });
 
   it("places the market suggestions after the portfolio in the apps group", () => {
@@ -292,6 +323,48 @@ describe("the keyword_breakdown tool", () => {
   });
 });
 
+describe("the keyword_discoveries tool", () => {
+  const tool = () => {
+    const found = toolByName("keyword_discoveries");
+    if (!found) throw new Error("keyword_discoveries is not in the catalog");
+    return found;
+  };
+
+  it("lists keyword_discoveries as a read tool", () => {
+    expect(MCP_TOOLS.map((each) => each.name)).toContain("keyword_discoveries");
+    expect(MCP_WRITE_TOOLS.map((each) => each.name)).not.toContain(
+      "keyword_discoveries",
+    );
+    expect(annotationsOf(tool()).readOnlyHint).toBe(true);
+  });
+
+  it("wraps the list route with its query", () => {
+    expect(
+      requestOf(tool(), {
+        appId: "app-1",
+        country: "de",
+        state: "ranked",
+        limit: 50,
+      }),
+    ).toEqual({
+      method: "GET",
+      path: "/apps/app-1/keyword-discoveries",
+      params: { country: "de", state: "ranked", limit: 50 },
+    });
+  });
+
+  it("refuses a state outside the discovery states", () => {
+    expect(
+      tool().inputSchema.safeParse({ appId: "app-1", state: "tracked" })
+        .success,
+    ).toBe(false);
+    expect(
+      tool().inputSchema.safeParse({ appId: "app-1", state: "opportunity" })
+        .success,
+    ).toBe(true);
+  });
+});
+
 describe("the keyword_suggestions allowance", () => {
   it("says when a store suggestion spends the allowance", () => {
     const description = toolByName("keyword_suggestions")?.description ?? "";
@@ -316,6 +389,47 @@ describe("the keyword_comparison unchecked ids", () => {
     expect(description).toContain("unchecked");
     expect(description).toContain("never been checked");
   });
+});
+
+describe("the visibility_history comparison", () => {
+  const tool = () => toolByName("visibility_history");
+
+  it("asks for share of voice when compared with competitors", () => {
+    expect(tool()?.request({ appId: "app-1", compare: "competitors" })).toEqual(
+      {
+        path: "/apps/app-1/visibility-history",
+        params: {
+          from: undefined,
+          to: undefined,
+          country: undefined,
+          compare: "competitors",
+        },
+      },
+    );
+  });
+
+  it("refuses an unknown comparison", () => {
+    expect(
+      tool()?.inputSchema.safeParse({ appId: "app-1", compare: "apps" })
+        .success,
+    ).toBe(false);
+  });
+
+  it.each(["app_summary", "visibility_history"])(
+    "names share of voice in %s",
+    (name) => {
+      expect(toolByName(name)?.description).toContain("shareOfVoice");
+    },
+  );
+});
+
+describe("the competitor_analysis gap lists", () => {
+  it.each(["keywordGaps", "winnable", "threats", "lead", "coverage"])(
+    "names %s",
+    (field) => {
+      expect(toolByName("competitor_analysis")?.description).toContain(field);
+    },
+  );
 });
 
 describe("the competitor, comparison and chart tools", () => {

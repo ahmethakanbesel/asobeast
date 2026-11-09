@@ -3,6 +3,7 @@ import {
   ACTION_PRIORITIES,
   ACTION_RULES,
   ACTION_STATUSES,
+  DISCOVERY_STATES,
   KEYWORD_BUCKETS,
   KEYWORD_SORTS,
   KEYWORD_SOURCES,
@@ -27,7 +28,15 @@ import { DEFAULT_MCP_CLIENT, MCP_CLIENTS } from "./mcp-snippets";
 import { GRADES } from "./grade";
 import { KEYWORD_ZONES } from "./keyword-zones";
 import { POSITION_BANDS } from "./table/facets";
+import { GAP_TABS } from "./gap-lists";
 import {
+  GAP_SORTS,
+  GAP_URL_KEYS,
+  gapSortParser,
+  gapTableParsers,
+  gapTabParser,
+  VISIBILITY_VIEWS,
+  visibilityViewParser,
   alertFeedParsers,
   planParam,
   chartParsers,
@@ -60,7 +69,10 @@ import {
   countryParser,
   matrixFilterParsers,
   discoveryDaysParser,
+  discoveryStateParser,
   KEYWORD_STATUSES,
+  KEYWORDS_TABS,
+  keywordsTabParser,
   COVERAGE_SORTS,
   coverageSortParser,
   DISCOVERY_SORTS,
@@ -128,6 +140,8 @@ const LITERAL_PARSERS: readonly LiteralParserCase[] = [
   ["appView", appViewParser, APP_VIEWS, "cards"],
   ["chartView", chartViewParser, CHART_VIEWS, "columns"],
   ["keywordView", keywordViewParser, KEYWORD_VIEWS, "table"],
+  ["keywordsTab", keywordsTabParser, KEYWORDS_TABS, "tracked"],
+  ["discoveryState", discoveryStateParser, DISCOVERY_STATES, "all"],
 ] as const;
 
 const NUMERIC_PARSERS = [
@@ -216,6 +230,12 @@ describe.each(LIST_PARSERS)(
       expect(parser.parseServerSide(members.join(","))).toEqual([...members]);
     });
 
+    it("reads a repeated member once", () => {
+      expect(
+        parser.parseServerSide(`${members[0]},${members[0]},${members[0]}`),
+      ).toEqual([members[0]]);
+    });
+
     it("drops an unknown member rather than the whole selection", () => {
       expect(parser.parseServerSide(`${members[0]},not-a-member`)).toEqual([
         members[0],
@@ -275,6 +295,13 @@ describe("matrix filter parsers", () => {
 describe("keywordIds parser", () => {
   it("defaults to an empty list", () => {
     expect(keywordIdsParser.defaultValue).toEqual([]);
+  });
+
+  it("reads a repeated id once", () => {
+    expect(keywordIdsParser.parseServerSide("kw-2,kw-1,kw-2")).toEqual([
+      "kw-2",
+      "kw-1",
+    ]);
   });
 
   it("keeps the order of the selected ids", () => {
@@ -362,6 +389,19 @@ describe("action queue parsers", () => {
       "de",
     ]);
     expect(actionQueueParsers.app.parseServerSide("app-1")).toEqual(["app-1"]);
+  });
+
+  it("reads a repeated market, app or category once", () => {
+    expect(actionQueueParsers.market.parseServerSide("us,de,us")).toEqual([
+      "us",
+      "de",
+    ]);
+    expect(actionQueueParsers.app.parseServerSide("app-1,app-1")).toEqual([
+      "app-1",
+    ]);
+    expect(
+      actionQueueParsers.category.parseServerSide("metadata,metadata"),
+    ).toEqual(["metadata"]);
   });
 });
 
@@ -493,6 +533,13 @@ describe("keyword tags parser", () => {
     ]);
     expect(keywordTagsParser.parseServerSide(undefined)).toEqual([]);
   });
+
+  it("reads a repeated tag once", () => {
+    expect(keywordTagsParser.parseServerSide("core,brand,core")).toEqual([
+      "core",
+      "brand",
+    ]);
+  });
 });
 
 describe("draftLocale parser", () => {
@@ -572,6 +619,12 @@ describe("keyword type parser", () => {
     expect(serialize({ type: [] })).toBe("");
   });
 
+  it("reads a repeated class once", () => {
+    expect(
+      keywordFilterParsers.type.parseServerSide("generic,ownBrand,generic"),
+    ).toEqual(["generic", "ownBrand"]);
+  });
+
   it("drops a class it does not know", () => {
     expect(keywordFilterParsers.type.parseServerSide("brand,generic")).toEqual([
       "generic",
@@ -583,6 +636,12 @@ describe("alert feed parsers", () => {
   it("keeps only the feed events of a type list", () => {
     expect(
       alertFeedParsers.type.parse("rank.dropped,nope,chart.entered"),
+    ).toEqual(["rank.dropped", "chart.entered"]);
+  });
+
+  it("reads a repeated type once", () => {
+    expect(
+      alertFeedParsers.type.parse("rank.dropped,chart.entered,rank.dropped"),
     ).toEqual(["rank.dropped", "chart.entered"]);
   });
 
@@ -644,5 +703,64 @@ describe("keywordChartSelectionParser", () => {
       false,
     );
     expect(parser.eq({ mode: "hidden" }, { mode: "hidden" })).toBe(true);
+  });
+});
+
+describe("the gap analysis url state", () => {
+  it("defaults the tab to the keyword gaps and reads the four tabs", () => {
+    expect(gapTabParser.defaultValue).toBe("gaps");
+    expect(GAP_TABS.map((tab) => gapTabParser.parse(tab))).toEqual([
+      "gaps",
+      "winnable",
+      "threats",
+      "lead",
+    ]);
+    expect(gapTabParser.parse("other")).toBeNull();
+  });
+
+  it("defaults the sort to opportunity and reads its own columns", () => {
+    expect(gapSortParser.defaultValue).toBe("opportunity");
+    expect(GAP_SORTS.every((sort) => gapSortParser.parse(sort) === sort)).toBe(
+      true,
+    );
+    expect(gapSortParser.parse("volume")).toBeNull();
+  });
+
+  it("keeps its own keys apart from the matrix", () => {
+    expect(Object.values(GAP_URL_KEYS)).toEqual([
+      "gapSort",
+      "gapDir",
+      "gapQ",
+      "gapCountry",
+    ]);
+    expect(Object.values(GAP_URL_KEYS)).not.toEqual(
+      expect.arrayContaining(["sort", "dir", "q", "country"]),
+    );
+  });
+
+  it("writes a tab other than the first and nothing for the first", () => {
+    const serialize = createSerializer({ gaps: gapTabParser });
+
+    expect(serialize({ gaps: "winnable" })).toBe("?gaps=winnable");
+    expect(serialize({ gaps: "gaps" })).toBe("");
+  });
+
+  it("writes the share of voice view and nothing for visibility", () => {
+    const serialize = createSerializer({ visView: visibilityViewParser });
+
+    expect(visibilityViewParser.defaultValue).toBe("visibility");
+    expect(VISIBILITY_VIEWS).toEqual(["visibility", "share"]);
+    expect(serialize({ visView: "share" })).toBe("?visView=share");
+    expect(serialize({ visView: "visibility" })).toBe("");
+  });
+
+  it("renames the table keys when serialized", () => {
+    const serialize = createSerializer(gapTableParsers, {
+      urlKeys: GAP_URL_KEYS,
+    });
+
+    expect(
+      serialize({ sort: "popularity", dir: "asc", q: "focus", country: "de" }),
+    ).toBe("?gapSort=popularity&gapDir=asc&gapQ=focus&gapCountry=de");
   });
 });

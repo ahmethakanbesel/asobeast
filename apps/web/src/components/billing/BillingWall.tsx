@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useQueryState } from "nuqs";
 import {
   PLANS,
-  planPriceLabel,
+  planRenewalTerms,
   type AccountPlan,
   type AuthUser,
   type BillingCatalog,
@@ -19,6 +19,7 @@ import {
   paywallHeading,
   paywallStatusLine,
   planAction,
+  planOnSale,
   planActionLabel,
   trialBarParts,
   trustLines,
@@ -31,24 +32,28 @@ import { PaywallFaq } from "./PaywallFaq";
 import { PlanPicker } from "./PlanPicker";
 import { TrialBar } from "./TrialBar";
 import { TrustRow } from "./TrustRow";
+import { useViewerClock } from "./use-viewer-clock";
 
 const DEFAULT_PLAN: PaidPlanName = "indie";
 
 export function BillingWall({
   user,
-  plan,
+  plan: accountPlan,
   catalog,
+  billing,
 }: {
   user: AuthUser | undefined;
   plan: AccountPlan | undefined;
   catalog: BillingCatalog | undefined;
+  billing: boolean;
 }) {
   const [selected, setSelected] = useQueryState(
     "plan",
     planParam.withDefault(DEFAULT_PLAN).withOptions({ clearOnDefault: false }),
   );
   const [interval, setInterval] = useState<BillingInterval>("month");
-  const [now] = useState(() => new Date());
+  const clock = useViewerClock();
+  const plan = planOnSale(accountPlan, catalog);
   const offer = plan?.trialOffer ?? null;
   const action = planAction(plan, selected);
   const price = catalog?.prices.find(
@@ -60,7 +65,7 @@ export function BillingWall({
       ? (catalog?.publishableKey ?? null)
       : null;
   const trialParts =
-    action === "trial" && offer ? trialBarParts(offer, now) : null;
+    action === "trial" && offer ? trialBarParts(offer, clock) : null;
 
   return (
     <div className="page-checkout flex flex-col gap-8 pb-40 sm:pb-28">
@@ -70,9 +75,9 @@ export function BillingWall({
           {paywallHeading(plan)}
         </h1>
         <p className="max-w-prose text-subtitle font-normal text-muted-foreground">
-          {paywallStatusLine(plan, now)}
+          {paywallStatusLine(plan, clock)}
         </p>
-        {offer ? <TrustRow lines={trustLines(offer, now)} /> : null}
+        {offer ? <TrustRow lines={trustLines(offer, clock)} /> : null}
       </header>
       <div className="grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,28rem)] xl:gap-12">
         <PlanPicker
@@ -90,11 +95,12 @@ export function BillingWall({
           action={action}
           price={price}
           publishableKey={publishableKey}
-          now={now}
+          clock={clock}
+          billing={billing}
         />
       </div>
       <PaywallFaq
-        items={paywallFaq(offer, planPriceLabel(selected, interval), now)}
+        items={paywallFaq(offer, planRenewalTerms(selected, interval), clock)}
       />
       <TrialBar
         parts={trialParts}

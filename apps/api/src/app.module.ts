@@ -21,6 +21,7 @@ import { TenancyModule } from './common/tenancy/tenancy.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { ActionsModule } from './actions/actions.module';
 import { AnnotationsModule } from './annotations/annotations.module';
+import { ChecklistModule } from './checklist/checklist.module';
 import { KeywordInspectionsModule } from './keyword-inspections/keyword-inspections.module';
 import { AppsModule } from './apps/apps.module';
 import { AuditModule } from './audit/audit.module';
@@ -32,6 +33,7 @@ import { MetadataModule } from './metadata/metadata.module';
 import { HealthModule } from './health/health.module';
 import { QuotaModule } from './auth/quota.module';
 import { JobsModule } from './jobs/jobs.module';
+import { KeywordDiscoveryModule } from './keyword-discovery/keyword-discovery.module';
 import { MetricsModule } from './metrics/metrics.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { FailFastRedisModule } from './redis/fail-fast-redis.module';
@@ -57,8 +59,10 @@ import { envConfigModule } from './config/env-config.module';
     JobsModule,
     MetricsModule,
     AppsModule,
+    KeywordDiscoveryModule,
     AnalyticsModule,
     AnnotationsModule,
+    ChecklistModule,
     KeywordInspectionsModule,
     StoreConnectModule,
     AuditModule,

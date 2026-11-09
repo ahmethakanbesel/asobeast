@@ -10,6 +10,7 @@ import {
   SUPPORT_EMAIL,
 } from "@asobeast/shared";
 import { Lock } from "lucide-react";
+import { LegalLinks } from "@/components/layout/LegalLinks";
 import { Skeleton } from "@/components/ui/skeleton";
 import { sessionKeyOf } from "@/lib/embedded-checkout";
 import { INTERVAL_LABEL, summaryFromCatalog } from "@/lib/order-summary";
@@ -21,6 +22,7 @@ import {
   buysPlan,
   trialPaymentNote,
   type PlanAction,
+  type ViewerClock,
 } from "@/lib/plan-choice";
 import { EmbeddedCheckout } from "./EmbeddedCheckout";
 import { OrderSummary } from "./OrderSummary";
@@ -34,7 +36,8 @@ export function PaymentColumn({
   action,
   price,
   publishableKey,
-  now,
+  clock,
+  billing,
 }: {
   plan: AccountPlan | undefined;
   catalog: BillingCatalog | undefined;
@@ -43,7 +46,8 @@ export function PaymentColumn({
   action: PlanAction;
   price: BillingPrice | undefined;
   publishableKey: string | null;
-  now: Date;
+  clock: ViewerClock;
+  billing: boolean;
 }) {
   const offer = action === "trial" ? plan?.trialOffer : null;
   const theme = useCheckoutTheme();
@@ -70,7 +74,7 @@ export function PaymentColumn({
       ) : null}
       {buysPlan(action) ? (
         <OrderSummary
-          summary={summaryFromCatalog(name, interval, offer, now)}
+          summary={summaryFromCatalog(name, interval, offer, clock)}
         />
       ) : null}
       {catalog?.enabled && buysPlan(action) ? (
@@ -80,13 +84,14 @@ export function PaymentColumn({
         </p>
       ) : null}
       <p className="text-caption text-muted-foreground">
-        <span>{trialPaymentNote(catalog, offer, now)}</span>{" "}
+        <span>{trialPaymentNote(catalog, offer, clock)}</span>{" "}
         <span>{NEED_HELP}</span>{" "}
         <a href={`mailto:${SUPPORT_EMAIL}`} className="font-medium underline">
           {CONTACT_SUPPORT}
         </a>
         .
       </p>
+      {billing ? <LegalLinks /> : null}
     </section>
   );
 }

@@ -42,11 +42,14 @@ import {
   visibilityPoints,
 } from './analytics.support';
 import { MarketHistoryQueryDto } from './dto/market-history-query.dto';
+import { VisibilityCompareQueryDto } from './dto/visibility-compare-query.dto';
 import { VisibilityHistoryQueryDto } from './dto/visibility-history-query.dto';
 import { movers } from './movers';
 import { bucketPositions, rankDistributionAt } from './rank-distribution';
 import { collapseRatings } from './ratings-history';
+import { ShareOfVoiceService } from './share-of-voice.service';
 import { HOME_LISTING, NEWEST_FIRST } from '../apps/listing';
+import { countDiscoveries } from '../keyword-discovery/discovery-counts';
 
 const SUMMARY_WINDOW_DAYS = 31;
 const COVERAGE_LIMIT = 5;
@@ -105,31 +108,42 @@ const uncoveredWorthAdding = (
 
 @Injectable()
 export class AnalyticsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly shares: ShareOfVoiceService,
+  ) {}
 
   async summary(appId: string, country?: string): Promise<AppSummary> {
     await this.ensureApp(appId);
 
-    const [market, everyMarket, snapshot, competitors, inKeywordField] =
-      await Promise.all([
-        keywordWindow(this.prisma, { appId, country }, SUMMARY_WINDOW_DAYS),
-        country
-          ? keywordWindow(this.prisma, { appId }, SUMMARY_WINDOW_DAYS)
-          : null,
-        this.prisma.appSnapshot.findFirst({
-          where: { appId, ...HOME_LISTING },
-          orderBy: NEWEST_FIRST,
-          select: {
-            title: true,
-            subtitle: true,
-            description: true,
-            capturedAt: true,
-          },
-        }),
-        this.prisma.app.count({ where: { primaryAppId: appId } }),
-        loadKeywordFieldIndex(this.prisma, appId),
-      ]);
+    const [
+      market,
+      everyMarket,
+      snapshot,
+      shareContext,
+      inKeywordField,
+      discoveries,
+    ] = await Promise.all([
+      keywordWindow(this.prisma, { appId, country }, SUMMARY_WINDOW_DAYS),
+      country
+        ? keywordWindow(this.prisma, { appId }, SUMMARY_WINDOW_DAYS)
+        : null,
+      this.prisma.appSnapshot.findFirst({
+        where: { appId, ...HOME_LISTING },
+        orderBy: NEWEST_FIRST,
+        select: {
+          title: true,
+          subtitle: true,
+          description: true,
+          capturedAt: true,
+        },
+      }),
+      this.shares.context({ appId, country }),
+      loadKeywordFieldIndex(this.prisma, appId),
+      countDiscoveries(this.prisma, [appId], country),
+    ]);
     const covered = everyMarket ?? market;
+    const share = await this.shares.summary(shareContext, market);
 
     return {
       visibility: this.visibilitySummary(market.rows, market.referenceDate),
@@ -143,13 +157,15 @@ export class AnalyticsService {
       ),
       lastRefreshAt: snapshot?.capturedAt.toISOString() ?? null,
       trackedKeywords: market.rows.length,
-      competitors,
+      competitors: shareContext.competitorIds.length,
+      ...share,
+      discoveries: discoveries.get(appId),
     };
   }
 
   async history(
     appId: string,
-    query: MarketHistoryQueryDto,
+    query: VisibilityCompareQueryDto,
   ): Promise<VisibilityHistory> {
     await this.ensureApp(appId);
 
@@ -170,7 +186,16 @@ export class AnalyticsService {
       from,
       to,
     );
-    return { points: visibilityPoints(rows) };
+    const points = visibilityPoints(rows);
+    if (query.compare !== 'competitors') {
+      return { points };
+    }
+    const shares = await this.shares.history(
+      { appId, country: query.country },
+      rows,
+      { from, to },
+    );
+    return { points, ...shares };
   }
 
   async rankDistributionHistory(

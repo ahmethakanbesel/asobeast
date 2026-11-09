@@ -1505,6 +1505,9 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "The workspace has no billing account Stripe knows yet"
           }
         },
         "summary": "Open the Stripe customer portal for this workspace",
@@ -3770,6 +3773,385 @@
         ]
       }
     },
+    "/apps/{id}/keyword-discoveries": {
+      "get": {
+        "description": "Reads stored rows only and reaches no store. A weekly job and a manual refresh build the list from the listing of each market, the home titles and subtitles of competitors, review phrases, Apple popularity weeks for the genre of the app and the phrases the workspace tracks for other apps, leaving out what the app tracks, active or paused, and what was dismissed. position is 1 based; null with a depth means checked and not found within that depth, and a null depth means never checked. depth 50 comes from another search of the phrase today or yesterday, 200 from the search of the app itself. state is ranked when the app has a position, opportunity when it has none, relevance is at least 60 and opportunity at least 35, and open otherwise. traffic and difficulty come from a score some tracker already produced, or, for an unscored App Store term, from the popularity Apple lists; a discovery is never scored, so opportunity is null until the keyword has a score. recommended marks the first 50 rows in list order and counts cover every open row of the requested market, whatever the state filter and the limit. unfit is the number of ranked rows that did not fit the plan while auto track is on. checks reports the weekly cap of searches, how many were queued this ISO week, how many are still waiting, the day of the newest check and the next run of the discovery schedule, whatever its cadence, null when the schedule is off.",
+        "operationId": "KeywordDiscoveryController_list",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "country",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "pattern": "^[a-z]{2}$",
+              "example": "de",
+              "type": "string"
+            }
+          },
+          {
+            "name": "state",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": "all",
+              "type": "string",
+              "enum": [
+                "all",
+                "ranked",
+                "opportunity"
+              ]
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 500,
+              "default": 200,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "summary": "List the keywords an app ranks for or could rank for that it does not track",
+        "tags": [
+          "keywords"
+        ]
+      }
+    },
+    "/apps/{id}/keyword-discoveries/track": {
+      "post": {
+        "description": "Tracks the discoveries named by keywordIds, or every ranked discovery with allRanked true, optionally in one market; exactly one of the two is required. Ids that are not open discoveries of the app are ignored. Tracking spends the keyword room of the plan the way a manual add does: skipped counts the rows over that room, which stay discoveries. A known position from a check of today or yesterday becomes the first position of the keyword and every other row queues its first position check. Answers 403 and writes nothing when another request took the last keyword slots in the meantime.",
+        "operationId": "KeywordDiscoveryController_track",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KeywordDiscoveryTrackDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Track keyword discoveries",
+        "tags": [
+          "keywords"
+        ]
+      }
+    },
+    "/apps/{id}/keyword-discoveries/dismiss": {
+      "post": {
+        "description": "Hides the named discoveries for good: a dismissed phrase is never proposed again for the app. dismissed counts the rows this request dismissed, so a second dismiss of the same ids answers 0.",
+        "operationId": "KeywordDiscoveryController_dismiss",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KeywordDiscoveryDismissDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Dismiss keyword discoveries",
+        "tags": [
+          "keywords"
+        ]
+      }
+    },
+    "/apps/{id}/keyword-discoveries/refresh": {
+      "post": {
+        "description": "Rebuilds the list from stored data, reads the positions other searches of the same phrases found today or yesterday for free, and queues at most the checks left of the weekly cap (40 per app on the App Store and 20 on Google Play, counted from Monday 00:00 UTC and shared with the weekly run). Spends one deep search allowance only when at least one check is queued; queued 0 costs nothing. Answers 202.",
+        "operationId": "KeywordDiscoveryController_refresh",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Refresh keyword discoveries",
+        "tags": [
+          "keywords"
+        ]
+      }
+    },
+    "/apps/{id}/keyword-discoveries/settings": {
+      "patch": {
+        "description": "Switching autoTrackRanked on tracks every ranked discovery that fits the keyword room of the plan at once, and every later check that finds the app tracks its phrase too; tracked and skipped report what this request tracked. Switching it off tracks nothing and leaves tracked keywords alone.",
+        "operationId": "KeywordDiscoveryController_updateSettings",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KeywordDiscoverySettingsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Change the keyword discovery settings of an app",
+        "tags": [
+          "keywords"
+        ]
+      }
+    },
+    "/apps/{id}/rankings": {
+      "get": {
+        "operationId": "RankingsController_history",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "from",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "keywordIds",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Ranking history series for an app",
+        "tags": [
+          "rankings"
+        ]
+      }
+    },
+    "/apps/{id}/serp-movers": {
+      "get": {
+        "operationId": "RankingsController_serpMovers",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "country",
+            "required": false,
+            "in": "query",
+            "description": "The storefront whose tracked keywords are described. Omitted means every market the app tracks.",
+            "schema": {
+              "pattern": "^[a-z]{2}$",
+              "example": "us",
+              "type": "string"
+            }
+          },
+          {
+            "name": "days",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 30,
+              "default": 7,
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/Object"
+                }
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Apps that broke into the top 10 for tracked keywords",
+        "tags": [
+          "rankings"
+        ]
+      }
+    },
+    "/keywords/{keywordId}/serp": {
+      "get": {
+        "description": "Answers up to 50 entries of the day asked for, or of the newest captured day. Each entry carries its iconUrl, titleMatch and titleSegments, and previous, delta and movement against comparedTo, the newest captured day before date. Movement is none when there is no earlier capture or the earlier capture did not reach that position. exits lists the apps of that earlier capture no longer listed, and dates lists up to 365 captured days, newest first.",
+        "operationId": "SerpController_serp",
+        "parameters": [
+          {
+            "name": "keywordId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "date",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+              "example": "2026-08-21",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Top search results captured for a keyword",
+        "tags": [
+          "rankings"
+        ]
+      }
+    },
     "/apps/{id}/changes": {
       "get": {
         "operationId": "ChangesController_timeline",
@@ -4018,160 +4400,6 @@
         "summary": "Screenshots of the latest snapshot of a listing with the caption read from each",
         "tags": [
           "screenshots"
-        ]
-      }
-    },
-    "/apps/{id}/rankings": {
-      "get": {
-        "operationId": "RankingsController_history",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "from",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "to",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "keywordIds",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          }
-        },
-        "summary": "Ranking history series for an app",
-        "tags": [
-          "rankings"
-        ]
-      }
-    },
-    "/apps/{id}/serp-movers": {
-      "get": {
-        "operationId": "RankingsController_serpMovers",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "country",
-            "required": false,
-            "in": "query",
-            "description": "The storefront whose tracked keywords are described. Omitted means every market the app tracks.",
-            "schema": {
-              "pattern": "^[a-z]{2}$",
-              "example": "us",
-              "type": "string"
-            }
-          },
-          {
-            "name": "days",
-            "required": true,
-            "in": "query",
-            "schema": {
-              "minimum": 1,
-              "maximum": 30,
-              "default": 7,
-              "allOf": [
-                {
-                  "$ref": "#/components/schemas/Object"
-                }
-              ]
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          }
-        },
-        "summary": "Apps that broke into the top 10 for tracked keywords",
-        "tags": [
-          "rankings"
-        ]
-      }
-    },
-    "/keywords/{keywordId}/serp": {
-      "get": {
-        "description": "Answers up to 50 entries of the day asked for, or of the newest captured day. Each entry carries its iconUrl, titleMatch and titleSegments, and previous, delta and movement against comparedTo, the newest captured day before date. Movement is none when there is no earlier capture or the earlier capture did not reach that position. exits lists the apps of that earlier capture no longer listed, and dates lists up to 365 captured days, newest first.",
-        "operationId": "SerpController_serp",
-        "parameters": [
-          {
-            "name": "keywordId",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "date",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
-              "example": "2026-08-21",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          }
-        },
-        "summary": "Top search results captured for a keyword",
-        "tags": [
-          "rankings"
         ]
       }
     },
@@ -4646,6 +4874,7 @@
     },
     "/apps/{id}/summary": {
       "get": {
+        "description": "Visibility, rank distribution, movers, coverage and counts of the app, for every market or one, with shareOfVoice: the visibility of the app as a percentage of the summed visibility of the app and the tracked competitors checked on the same day, over the same keywords, and the 7 day change; the reason is named when there is none. discoveries counts the keywords the app could rank for that it does not track, and how many of them it already ranks for; see keyword discovery.",
         "operationId": "AnalyticsController_getSummary",
         "parameters": [
           {
@@ -4688,6 +4917,7 @@
     },
     "/apps/{id}/visibility-history": {
       "get": {
+        "description": "Daily visibility of the app over a date window, for every market or one. compare=competitors also answers shareOfVoice, the app's visibility as a percentage of the summed visibility of the app and the tracked competitors checked that day, with the number of competitors counted on each day.",
         "operationId": "AnalyticsController_getVisibilityHistory",
         "parameters": [
           {
@@ -4707,6 +4937,18 @@
               "pattern": "^[a-z]{2}$",
               "example": "de",
               "type": "string"
+            }
+          },
+          {
+            "name": "compare",
+            "required": false,
+            "in": "query",
+            "description": "competitors adds shareOfVoice and nonBrandedShareOfVoice series: the app visibility divided by the summed visibility of the app and the tracked competitors checked that day.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "competitors"
+              ]
             }
           },
           {
@@ -4851,6 +5093,7 @@
     },
     "/portfolio": {
       "get": {
+        "description": "Every primary app of the workspace with its visibility, sparkline and counts, the groups and the totals. discoveries counts the keywords each app could rank for that it does not track, and how many of them it already ranks for; see keyword discovery.",
         "operationId": "PortfolioController_getPortfolio",
         "parameters": [],
         "responses": {
@@ -5887,6 +6130,60 @@
         ]
       }
     },
+    "/workspace/checklist": {
+      "get": {
+        "description": "The goal the workspace chose, whether the checklist was hidden and up to eight items, ordered for the goal and each derived on read from rows the workspace already holds: an imported app, an app that tracks keywords in two markets, a competitor, a connected store console, a personal API token that has been used, a confirmed email alert or an active webhook, a reply the owner marked, a saved keyword field. An item that cannot be done is left out: the keyword field when the workspace has apps and none is on the App Store, the console when the instance has no store connection key, the reply until a review is stored. appId is the app a link should open (the oldest one that does not satisfy the item) and null for workspace wide items. done and total count the items listed.",
+        "operationId": "ChecklistController_read",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Read the setup checklist of this workspace",
+        "tags": [
+          "auth"
+        ]
+      },
+      "patch": {
+        "description": "Changes the fields given and keeps the rest; an empty body changes nothing. goal is improve_rankings, research_idea, use_with_ai or null to clear it, and it orders the checklist. dismissed true hides the checklist for every member and keeps the time of the first dismissal when sent again; false shows it again. Answers the whole checklist. Answers 400 for an unknown goal or a body that is not these two fields, 402 when no plan is in force and 403 to a read scoped token.",
+        "operationId": "ChecklistController_update",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateWorkspaceChecklistDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Choose the goal of this workspace or hide the setup checklist",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
     "/actions": {
       "get": {
         "operationId": "ActionsController_list",
@@ -6432,6 +6729,7 @@
     },
     "/apps/{id}/competitors/analysis": {
       "get": {
+        "description": "Metadata of the app and each competitor, the three keyword gap lists (theyRankYouDont, youRankTheyDont, outranked), a position map, and four lists over the active tracked keywords of every market and the competitors that can be compared: keywordGaps (a competitor ranks within the top 30 and the app is unranked or below 100), winnable (a keyword gap where difficulty is below popularity or the best competitor ranks 11 or worse), threats (the app ranks within the top 30 and a competitor is 1 to 3 positions below it and rose on its last check, or passed the app in the last 7 days and is still ahead; checks older than yesterday UTC are left out) and lead (the app is ahead of every competitor that ranks). Rows are sorted by opportunity, then popularity. coverage says how many competitors could be compared in each market, so an empty list is not read as winning. Delisted competitors are left out of the four lists. Stored data only; no store request.",
         "operationId": "CompetitorsController_analysis",
         "parameters": [
           {
@@ -7008,7 +7306,7 @@
   "info": {
     "title": "asobeast API",
     "description": "Self hosted ASO toolkit API.\n\nA metered instance carries RateLimit-Limit, RateLimit-Remaining and RateLimit-Reset on every response, for the tightest limit the request touched. A self hosted instance has no request rate limits and sends no such header. Limits are per workspace, so minting more tokens does not buy more capacity, and they are sized per plan across three classes: read for stored data, write for configuration changes and store for the endpoints that reach the App Store or Google Play.\n\nA 429 carries Retry-After and a rateLimit object naming the window that closed, or an aiAllowance object when the workspace has spent the AI calls its plan includes this month. A 403 with a quota object means a plan capacity limit such as apps or tracked keyword markets, which is a different problem from a rate limit. A 402 with an entitlement object means the workspace needs a plan.\n\nPositions are 1-based and null means checked but not found within the captured depth, never zero. Daily granularity uses UTC dates.",
-    "version": "1.15.0",
+    "version": "1.16.0",
     "contact": {}
   },
   "tags": [],
@@ -8028,6 +8326,56 @@
           "text"
         ]
       },
+      "KeywordDiscoveryTrackDto": {
+        "type": "object",
+        "properties": {
+          "keywordIds": {
+            "minItems": 1,
+            "maxItems": 200,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 64
+            }
+          },
+          "allRanked": {
+            "type": "boolean"
+          },
+          "country": {
+            "type": "string",
+            "example": "de",
+            "pattern": "^[a-z]{2}$"
+          }
+        }
+      },
+      "KeywordDiscoveryDismissDto": {
+        "type": "object",
+        "properties": {
+          "keywordIds": {
+            "minItems": 1,
+            "maxItems": 200,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 64
+            }
+          }
+        },
+        "required": [
+          "keywordIds"
+        ]
+      },
+      "KeywordDiscoverySettingsDto": {
+        "type": "object",
+        "properties": {
+          "autoTrackRanked": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "autoTrackRanked"
+        ]
+      },
       "ChartCaptureDto": {
         "type": "object",
         "properties": {
@@ -8306,6 +8654,25 @@
           "date",
           "label"
         ]
+      },
+      "UpdateWorkspaceChecklistDto": {
+        "type": "object",
+        "properties": {
+          "goal": {
+            "nullable": true,
+            "enum": [
+              "improve_rankings",
+              "research_idea",
+              "use_with_ai"
+            ],
+            "type": "string",
+            "example": "improve_rankings"
+          },
+          "dismissed": {
+            "type": "boolean",
+            "example": true
+          }
+        }
       },
       "BulkUpdateActionsDto": {
         "type": "object",

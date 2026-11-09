@@ -17,6 +17,7 @@ import type {
   ReviewReplyItem,
   ReviewTranslation,
   Store,
+  VisibilityComparison,
   WebhookItem,
 } from "@asobeast/shared";
 import { isStoreSuggestionStrategy, QUERY_BOUNDS } from "@asobeast/shared";
@@ -69,6 +70,7 @@ import {
   getChanges,
   getEmailAlerts,
   getComparison,
+  getCompetitorAnalysis,
   getKeywordBreakdown,
   getCompetitorDiscovery,
   getCompetitorSuggestions,
@@ -81,6 +83,7 @@ import {
   getAppLocalizations,
   getKeywordField,
   getKeywords,
+  getKeywordDiscoveries,
   getMarketKeywordFields,
   getListingMarkets,
   getMarketAvailability,
@@ -109,6 +112,7 @@ import {
   getSummary,
   getVisibilityHistory,
   getWebhooks,
+  getWorkspaceChecklist,
   type ActionActivityScope,
   type ActionFilters,
   type ActionSummaryScope,
@@ -121,6 +125,7 @@ import {
 import { withReviewReply, withReviewRow } from "./review-reply-cache";
 import { runProgressInterval } from "./run-progress";
 import { keywordsPollInterval } from "./keyword-checks";
+import { keywordDiscoveriesPollInterval } from "./keyword-discoveries";
 import { firstImportPollInterval } from "./app-localizations";
 import {
   hasPendingScreenshots,
@@ -141,10 +146,16 @@ export const appKeys = {
     [...appKeys.funnelRoot(id), days, ...marketKey(country)] as const,
   keywordsRoot: (id: string) => [...appKeys.detail(id), "keywords"] as const,
   compareRoot: (id: string) => [...appKeys.detail(id), "compare"] as const,
+  competitorAnalysis: (id: string) =>
+    [...appKeys.compareRoot(id), "analysis"] as const,
   keywords: (id: string, country?: string) =>
     [...appKeys.detail(id), "keywords", { country }] as const,
   keywordCountries: (id: string) =>
     [...appKeys.detail(id), "keyword-countries"] as const,
+  keywordDiscoveriesRoot: (id: string) =>
+    [...appKeys.detail(id), "keyword-discoveries"] as const,
+  keywordDiscoveries: (id: string, country?: string) =>
+    [...appKeys.keywordDiscoveriesRoot(id), { country }] as const,
   importPreviewRoot: (id: string) =>
     [...appKeys.detail(id), "keyword-import-preview"] as const,
   importPreview: (id: string, request: KeywordImportRequest | null) =>
@@ -182,12 +193,18 @@ export const appKeys = {
   audit: (id: string) => [...appKeys.detail(id), "audit"] as const,
   auditHistory: (id: string, params: RangeParams) =>
     [...appKeys.detail(id), "audit-history", params] as const,
-  visibility: (id: string, params: RangeParams, country?: string) =>
+  visibility: (
+    id: string,
+    params: RangeParams,
+    country?: string,
+    compare?: VisibilityComparison,
+  ) =>
     [
       ...appKeys.detail(id),
       "visibility",
       params,
       ...marketKey(country),
+      ...(compare ? [compare] : []),
     ] as const,
   rankDistribution: (id: string, params: RangeParams, country?: string) =>
     [
@@ -470,10 +487,12 @@ export function invalidateStoreConnectionMutation(client: QueryClient): void {
   void client.invalidateQueries({
     predicate: (query) => query.queryKey.includes("funnel"),
   });
+  invalidateWorkspaceChecklist(client);
 }
 
 export function invalidateApiTokenMutation(client: QueryClient): void {
   void client.invalidateQueries({ queryKey: apiTokenKeys.all });
+  invalidateWorkspaceChecklist(client);
 }
 
 export function invalidatePasswordChange(client: QueryClient): void {
@@ -712,6 +731,17 @@ export const keywordsOptions = (id: string, country?: string) =>
       keywordsPollInterval(query.state.data, query.state.dataUpdateCount),
   });
 
+export const keywordDiscoveriesOptions = (id: string, country?: string) =>
+  queryOptions({
+    queryKey: appKeys.keywordDiscoveries(id, country),
+    queryFn: () => getKeywordDiscoveries(id, country),
+    refetchInterval: (query) =>
+      keywordDiscoveriesPollInterval(
+        query.state.data,
+        query.state.dataUpdateCount,
+      ),
+  });
+
 export const keywordCountriesOptions = (id: string) =>
   queryOptions({
     queryKey: appKeys.keywordCountries(id),
@@ -819,10 +849,17 @@ export const visibilityOptions = (
   id: string,
   params: RangeParams,
   country?: string,
+  compare?: VisibilityComparison,
 ) =>
   queryOptions({
-    queryKey: appKeys.visibility(id, params, country),
-    queryFn: () => getVisibilityHistory(id, params, country),
+    queryKey: appKeys.visibility(id, params, country, compare),
+    queryFn: () => getVisibilityHistory(id, params, country, compare),
+  });
+
+export const competitorAnalysisOptions = (id: string) =>
+  queryOptions({
+    queryKey: appKeys.competitorAnalysis(id),
+    queryFn: () => getCompetitorAnalysis(id),
   });
 
 export const categoryRanksOptions = (id: string, params: RangeParams) =>
@@ -1003,6 +1040,20 @@ export const setupOptions = (id: string) =>
     refetchOnWindowFocus: true,
   });
 
+export const workspaceChecklistKey = ["workspace-checklist"] as const;
+
+export const workspaceChecklistOptions = queryOptions({
+  queryKey: workspaceChecklistKey,
+  queryFn: getWorkspaceChecklist,
+  staleTime: 60 * 1000,
+  retry: false,
+  refetchOnWindowFocus: true,
+});
+
+export function invalidateWorkspaceChecklist(client: QueryClient): void {
+  void client.invalidateQueries({ queryKey: workspaceChecklistKey });
+}
+
 export const serpOptions = (keywordId: string, date: string | null = null) =>
   queryOptions({
     queryKey: appKeys.serp(keywordId, date),
@@ -1134,6 +1185,21 @@ export function invalidateKeywordMutation(
   });
   void client.invalidateQueries({ queryKey: appKeys.marketSuggestions(id) });
   void client.invalidateQueries({ queryKey: appKeys.firstRun(id) });
+  void client.invalidateQueries({
+    queryKey: appKeys.keywordDiscoveriesRoot(id),
+  });
+  invalidateWorkspaceChecklist(client);
+}
+
+export function invalidateKeywordDiscoveries(
+  client: QueryClient,
+  id: string,
+): void {
+  void client.invalidateQueries({
+    queryKey: appKeys.keywordDiscoveriesRoot(id),
+  });
+  void client.invalidateQueries({ queryKey: appKeys.summary(id) });
+  void client.invalidateQueries({ queryKey: portfolioKey });
 }
 
 export function invalidateMarketSeed(
@@ -1201,6 +1267,7 @@ export function removeAppQueries(client: QueryClient, id: string): void {
   client.removeQueries({ queryKey: appKeys.detail(id) });
   client.removeQueries({ queryKey: appKeys.suggestionsRoot(id) });
   void client.invalidateQueries({ queryKey: alertEventKeys.all });
+  invalidateWorkspaceChecklist(client);
 }
 
 export function invalidateAppListing(client: QueryClient, id: string): void {
@@ -1285,6 +1352,7 @@ export function invalidateReviewReplyMutation(
     refetchType: "none",
   });
   void client.invalidateQueries({ queryKey: appKeys.reviewThemesRoot(id) });
+  invalidateWorkspaceChecklist(client);
 }
 
 export function invalidateReviewReplyPost(
@@ -1310,6 +1378,7 @@ export function invalidateCompetitorMutation(
   void client.invalidateQueries({ queryKey: portfolioKey });
   void client.invalidateQueries({ queryKey: appKeys.firstRun(id) });
   invalidateLocalSuggestions(client, id);
+  invalidateWorkspaceChecklist(client);
 }
 
 export function invalidateLinkMutation(
@@ -1325,10 +1394,12 @@ export function invalidateLinkMutation(
 
 export function invalidateWebhookMutation(client: QueryClient): void {
   void client.invalidateQueries({ queryKey: webhookKeys.all });
+  invalidateWorkspaceChecklist(client);
 }
 
 export function invalidateEmailAlertMutation(client: QueryClient): void {
   void client.invalidateQueries({ queryKey: emailAlertKeys.all });
+  invalidateWorkspaceChecklist(client);
 }
 
 export function invalidateAnnotationMutation(

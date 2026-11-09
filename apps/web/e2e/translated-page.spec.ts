@@ -1,7 +1,14 @@
 import { type Page } from "@playwright/test";
 import { PLAN_LIMITS, UPGRADE_PATH, type AccountPlan } from "@asobeast/shared";
+import {
+  APP_TRANSLATED_DISCOVERY_STATES_ID,
+  APP_TRANSLATED_DISCOVERY_TRACK_ID,
+} from "./fixtures.mts";
 import { holdRequest } from "./held-request.mts";
 import { hydrated } from "./hydrated.mts";
+import { MOCK_API_URL } from "./localizations.mts";
+import { startedSetup } from "./setup-session.mts";
+import { seedChecklist } from "./workspace-checklist.mts";
 import {
   chooseImportFile,
   openImportDialog,
@@ -11,6 +18,7 @@ import { fulfillJson, routePlan } from "./plan-helpers.mts";
 import { SERP_HISTORY_DAYS } from "./serp-history.mts";
 import type { SerpEntryItem, SerpSnapshot } from "@asobeast/shared";
 import { expect, test } from "./session.mts";
+import { collectDomErrors, translateText } from "./translate.mts";
 import { openBilling } from "./trial-plans.mts";
 import { typeInto } from "./type.mts";
 import {
@@ -39,20 +47,6 @@ const TRIAL_PLAN: AccountPlan = {
     keywordMarkets: { used: 20, limit: PLAN_LIMITS.trial.keywordMarkets },
   },
 };
-
-function collectDomErrors(page: Page): string[] {
-  const errors: string[] = [];
-  const record = (message: string) => {
-    if (/NotFoundError|insertBefore|removeChild/.test(message)) {
-      errors.push(message);
-    }
-  };
-  page.on("pageerror", (error) => record(`${error.name}: ${error.message}`));
-  page.on("console", (message) => {
-    if (message.type() === "error") record(message.text());
-  });
-  return errors;
-}
 
 async function routeUpgrade(page: Page): Promise<void> {
   await page.route("**/api/backend/auth/status", (route) =>
@@ -86,24 +80,6 @@ async function routeUpgrade(page: Page): Promise<void> {
 async function openUpgrade(page: Page): Promise<void> {
   await routeUpgrade(page);
   await page.goto("/upgrade");
-}
-
-async function translateText(page: Page): Promise<void> {
-  await page.evaluate(() => {
-    const walker = document.createTreeWalker(
-      document.body,
-      NodeFilter.SHOW_TEXT,
-    );
-    const texts: Text[] = [];
-    while (walker.nextNode()) texts.push(walker.currentNode as Text);
-    for (const text of texts.filter((node) => node.data.trim())) {
-      const outer = document.createElement("font");
-      const inner = document.createElement("font");
-      inner.textContent = text.data.toUpperCase();
-      outer.append(inner);
-      text.replaceWith(outer);
-    }
-  });
 }
 
 test("a translated upgrade page shows the payment note the catalog brings", async ({
@@ -513,7 +489,7 @@ test("a translated keywords page brings back the badges a search hid", async ({
     has: page.getByRole("checkbox", { name: "Select pomodoro", exact: true }),
   });
   await expect(
-    pomodoro.getByRole("group", { name: /^Insights\./ }),
+    pomodoro.getByRole("group", { name: "Insights", exact: true }),
   ).toBeVisible();
 
   await translateText(page);
@@ -522,7 +498,9 @@ test("a translated keywords page brings back the badges a search hid", async ({
   await search.fill("");
 
   await expect(
-    pomodoro.getByRole("group", { name: /^Insights\. Dropping/ }),
+    pomodoro
+      .getByRole("group", { name: "Insights", exact: true })
+      .getByRole("button", { name: /^Dropping/ }),
   ).toBeVisible();
   expect(errors).toEqual([]);
 });
@@ -874,5 +852,144 @@ test("a translated alerts page loads more, filters and searches", async ({
   await page.getByRole("button", { name: /^Remove Search/ }).click();
 
   await expect(page).not.toHaveURL(/q=germany/);
+  expect(errors).toEqual([]);
+});
+
+test("a translated gap analysis switches its tabs and market", async ({
+  page,
+}) => {
+  const errors = collectDomErrors(page);
+  await page.goto("/apps/app-1/competitors");
+  const section = page.getByRole("region", {
+    name: /where competitors beat you/i,
+  });
+  const winnable = await hydrated(
+    section.getByRole("tab", { name: "Winnable now (2)" }),
+  );
+
+  await translateText(page);
+  await winnable.click();
+  await section.getByRole("tab", { name: /^threats/i }).click();
+  await section.getByRole("combobox", { name: "Filter by gap market" }).click();
+  await page.getByRole("option", { name: /germany/i }).click();
+
+  await expect(page).toHaveURL(/gapCountry=de/);
+  await expect(section.getByRole("tab", { name: /\(1\)$/ })).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test("a translated keywords page switches to its discoveries and their states", async ({
+  page,
+}) => {
+  await page.request.post(
+    `${MOCK_API_URL}/__reset/keyword-discoveries/${APP_TRANSLATED_DISCOVERY_STATES_ID}`,
+  );
+  const errors = collectDomErrors(page);
+  await page.goto(`/apps/${APP_TRANSLATED_DISCOVERY_STATES_ID}/keywords`);
+  const discovered = await hydrated(
+    page
+      .getByRole("tablist", { name: "Keyword lists" })
+      .getByRole("tab", { name: /^Discovered 9/ }),
+  );
+
+  await translateText(page);
+  await discovered.click();
+  const states = page.getByRole("tablist", {
+    name: "Discovered keyword states",
+  });
+  await states.getByRole("tab", { name: /^ranked/i }).click();
+  await states.getByRole("tab", { name: /^opportunities/i }).click();
+  await page
+    .getByRole("tablist", { name: "Keyword lists" })
+    .getByRole("tab", { name: /^tracked/i })
+    .click();
+
+  await expect(page).not.toHaveURL(/tab=/);
+  await expect(
+    page.getByRole("table", { name: /tracked keywords/i }),
+  ).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test("a translated discovered list tracks, auto tracks and refreshes", async ({
+  page,
+}) => {
+  await page.request.post(
+    `${MOCK_API_URL}/__reset/keyword-discoveries/${APP_TRANSLATED_DISCOVERY_TRACK_ID}`,
+  );
+  const errors = collectDomErrors(page);
+  await page.goto(
+    `/apps/${APP_TRANSLATED_DISCOVERY_TRACK_ID}/keywords?tab=discovered`,
+  );
+  const track = await hydrated(
+    page.getByRole("button", { name: "Track work sprint", exact: true }),
+  );
+
+  await translateText(page);
+  await track.click();
+  await expect(
+    page.getByRole("rowheader", { name: /^work sprint/i }),
+  ).toHaveCount(0);
+  const toggle = page.getByRole("switch", { name: /auto-track ranked/i });
+  await toggle.click();
+  await expect(toggle).toBeChecked();
+  await page.getByRole("button", { name: /^refresh discoveries$/i }).click();
+  await page.waitForLoadState("networkidle");
+
+  await expect(
+    page.getByRole("heading", { name: /discovered keywords/i }),
+  ).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test("a translated checklist pill opens, shrinks, cancels a hide and follows a step", async ({
+  page,
+  context,
+}) => {
+  const errors = collectDomErrors(page);
+  await seedChecklist(context, "partial");
+  await page.goto("/apps/app-1");
+  const pill = await hydrated(
+    page.getByRole("button", { name: /done in the setup checklist$/i }),
+  );
+
+  await translateText(page);
+  await pill.click();
+  const popover = page.getByRole("dialog");
+  await popover.getByRole("button", { name: /shrink the pill/i }).click();
+  await popover.getByRole("button", { name: /hide checklist/i }).click();
+  await page
+    .getByRole("alertdialog")
+    .getByRole("button", { name: "Cancel" })
+    .click();
+  await pill.click();
+  await page
+    .getByRole("dialog")
+    .getByRole("link", { name: /add a market/i })
+    .click();
+
+  await expect(page).toHaveURL(/\/apps\/app-1\/keywords$/);
+  await expect(page.getByRole("button", { name: "Try again" })).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+test("a translated setup page chooses a goal", async ({ page, context }) => {
+  const errors = collectDomErrors(page);
+  await startedSetup(context, "app-1");
+  await seedChecklist(context, "partial");
+  await page.goto("/apps/app-1/setup");
+  const research = await hydrated(
+    page.getByRole("button", { name: /^Research an idea/i }),
+  );
+
+  await translateText(page);
+  await research.click();
+  await expect(research).toHaveAttribute("aria-pressed", "true");
+  await page.getByRole("button", { name: /^Improve my rankings/i }).click();
+
+  await expect(
+    page.getByRole("button", { name: /^Improve my rankings/i }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("button", { name: "Try again" })).toHaveCount(0);
   expect(errors).toEqual([]);
 });

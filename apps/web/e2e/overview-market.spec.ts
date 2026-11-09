@@ -120,7 +120,7 @@ test("names no market on the cards of an app with one listing", async ({
 }) => {
   await page.goto("/apps/app-2");
 
-  await expect(card(page, "Visibility")).toBeVisible();
+  await expect(card(page, "Visibility").first()).toBeVisible();
   await expect(page.getByRole("combobox", { name: SWITCHER })).toHaveCount(0);
 });
 
@@ -135,4 +135,23 @@ test("says which scope the cards that ignore the switcher count", async ({
     ),
   ).toBeVisible();
   await expect(card(page, "Category ranks · Home market")).toBeVisible();
+});
+
+test("links the keyword discoveries of the scoped market", async ({ page }) => {
+  await page.goto("/apps/app-1");
+
+  const tracked = card(page, "Tracked keywords · All markets");
+  await expect(
+    tracked.getByRole("link", {
+      name: "11 keyword discoveries, 4 where you already rank",
+    }),
+  ).toHaveAttribute("href", "/apps/app-1/keywords?tab=discovered");
+
+  await pickMarket(page, POLAND);
+
+  await expect(
+    card(page, "Tracked keywords · PL").getByRole("link", {
+      name: "2 keyword discoveries, 1 where you already rank",
+    }),
+  ).toHaveAttribute("href", "/apps/app-1/keywords?tab=discovered&country=pl");
 });

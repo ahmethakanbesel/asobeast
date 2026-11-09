@@ -202,6 +202,7 @@ describe('the cron variables', () => {
     'CRON_DIGEST',
     'CRON_AUDIT',
     'CRON_LOCALIZATION_SWEEP',
+    'CRON_DISCOVERY',
     'CRON_BILLING_RECONCILE',
     'CRON_TRIAL_NOTICES',
     'CRON_APPLE_POPULARITY',
@@ -212,12 +213,14 @@ describe('the cron variables', () => {
   it('accepts every default schedule', () => {
     expect(validateEnv(safe).CRON_DAILY).toBe('0 3 * * *');
     expect(validateEnv(safe).CRON_LOCALIZATION_SWEEP).toBe('0 7 * * 1');
+    expect(validateEnv(safe).CRON_DISCOVERY).toBe('30 7 * * 1');
   });
 
   it.each([
     'CRON_STORE_CANARY',
     'CRON_STORE_STATUS',
     'CRON_LOCALIZATION_SWEEP',
+    'CRON_DISCOVERY',
   ])('still accepts an empty %s, which removes its schedule', (name) => {
     expect(validateEnv({ ...safe, [name]: '' })[name]).toBe('');
   });
@@ -307,5 +310,31 @@ describe('RETENTION_STORE_REPORTS_DAYS', () => {
     expect(() =>
       validateEnv({ ...base, RETENTION_STORE_REPORTS_DAYS: '-1' }),
     ).toThrow();
+  });
+});
+
+describe('WEB_PUBLIC_URL built from ASOBEAST_PORT', () => {
+  const withOrigin = (origin: string) =>
+    validateEnv({ AUTH_SECRET: 'a'.repeat(32), WEB_PUBLIC_URL: origin });
+
+  it.each(['http://localhost:127.0.0.1:3999', 'http://localhost:0.0.0.0:3001'])(
+    'names the unparsable origin before the ASOBEAST_PORT it may come from %s',
+    (origin) => {
+      expect(() => withOrigin(origin)).toThrow(
+        'WEB_PUBLIC_URL is not an origin that parses. When WEB_PUBLIC_URL is not set, the Compose stacks build it from ASOBEAST_PORT',
+      );
+    },
+  );
+
+  it('keeps the default origin a port number builds', () => {
+    expect(withOrigin('http://localhost:3999').WEB_PUBLIC_URL).toBe(
+      'http://localhost:3999',
+    );
+  });
+
+  it('keeps naming WEB_PUBLIC_URL for any other malformed origin', () => {
+    expect(() => withOrigin('ftp://aso.example.com')).toThrow(
+      'WEB_PUBLIC_URL must be the http or https origin',
+    );
   });
 });

@@ -20,6 +20,7 @@ Every schedule is a cron expression evaluated in UTC. The defaults below come fr
 | `CRON_STORE_REPORTS` | `30 5 * * *` | Daily 05:30 | Downloads the reports each connected store console published since the last sync. Never scheduled without `STORE_CONNECT_ENCRYPTION_KEY` |
 | `CRON_AUDIT` | `0 6 * * *` | Daily 06:00 | Writes the daily audit score snapshot |
 | `CRON_LOCALIZATION_SWEEP` | `0 7 * * 1` | Monday 07:00 | Queues the lookups that detect the App Store localizations every app ships. An empty value removes it |
+| `CRON_DISCOVERY` | `30 7 * * 1` | Monday 07:30 | Queues the capped rank searches of keyword discovery. An empty value removes it |
 | `CRON_DIGEST` | `0 8 * * 1` | Monday 08:00 | Sends the weekly digest webhook |
 
 Batched alerts do not have their own schedule. They send once the daily pipeline reports every child job settled, so the delivery time depends on workload and retries rather than on a fixed clock.
@@ -33,7 +34,7 @@ Batched alerts do not have their own schedule. They send once the daily pipeline
 
 The difference matters. The Apple limiter spaces requests, while the Google Play limiter spaces job starts, because one Google Play job fans out into many sequential requests of its own.
 
-Work a person starts to explore rather than to collect, today the lookups of a deep search, is queued with a priority. A worker always takes every waiting job without a priority first, the daily run's jobs among them, so a deep search waits behind them. Such a lookup also checks, before it reaches the store, that its workspace still has a plan in force and is not suspended, and does nothing otherwise.
+Work a person starts to explore rather than to collect, today the lookups of a deep search and the searches of [keyword discovery](/guides/keyword-discovery), is queued with a priority on the same two workers. A worker always takes every waiting job without a priority first, the daily run's jobs among them, so a deep search or a discovery search waits behind them. Such a lookup also checks, before it reaches the store, that its workspace still has a plan in force and is not suspended, and does nothing otherwise.
 
 Reading screenshot captions runs in a third queue, `screenshots`, with its own worker at concurrency 1. While reading is on, every snapshot that records App Store screenshots queues one read, a market listing refresh included. With `SCREENSHOT_OCR=false` the screenshots are recorded as skipped and nothing is queued. It spends no store request budget and no OpenAI call. See [Read screenshot captions](/guides/screenshot-captions).
 
@@ -119,6 +120,8 @@ While `delistedAt` is set:
 - The run pill expects no listing of that app, in its home storefront or in any market, so today's run can reach **Run complete** on its position checks and chart reads.
 
 Stored history stays, position checks and chart reads go on, and the daily run keeps asking the store. The first home capture that finds the app again clears `delistedAt`, so the notice and the badges go away and the run pill counts the listing again. A market that does not list the app leaves `delistedAt` alone, because many apps are sold in some storefronts only; the run pill stops expecting that one listing instead, as [How do you follow today's run for one app?](#how-do-you-follow-todays-run-for-one-app) describes.
+
+Two captures of the same storefront can overlap, for example a **Refresh** pressed while the daily run reads the same listing. An answer that the app does not exist is recorded only when no capture of that app and storefront stored its listing after the read that got the answer started. A not found answer that arrives after an overlapping capture stored the listing therefore changes nothing and raises no alert. One that is recorded first is cleared by that capture as soon as it stores the listing.
 
 The first answer that sets `delistedAt`, and the first that adds a market after a stored listing of it, also raises the `app.delisted` and `app.unlisted_market` alerts. See [Delisted apps and unlisted markets](/guides/alerts#delisted-apps-and-unlisted-markets).
 

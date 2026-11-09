@@ -41,6 +41,7 @@ export class JobTargetCountry {
         return this.appCountry((job.data as RefreshAppPayload).appId);
       case JOBS.CHECK_KEYWORD:
       case JOBS.SCORE_KEYWORD:
+      case JOBS.DISCOVER_KEYWORD:
         return this.keywordCountry((job.data as ScoreKeywordPayload).keywordId);
       case JOBS.INSPECT_KEYWORD:
         return this.inspectionCountry(
